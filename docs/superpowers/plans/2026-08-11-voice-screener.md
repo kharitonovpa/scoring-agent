@@ -17,7 +17,22 @@
 - **Запреты, зашитые в промпты и проверяемые кодом:** не оценивать акцент, темп речи, пол, возраст; не считать паузу негативным сигналом самой по себе; не начинать интервью без явного согласия на запись.
 - **Ключ OpenAI никогда не уходит на клиент.** Браузер получает только эфемерный ключ из `/api/session`.
 - **Рубрика оценки не попадает в инструкции разговора** — клиент технически может переопределить конфиг сессии, привязанный к эфемерному ключу. Вся оценка живёт в `/api/analyze`.
-- **Утверждение без подтверждённой цитаты в карточку не попадает.** Цитата подтверждена, если её нормализованный текст входит в текст указанной реплики **кандидата**. Это ядро задачи, а не деталь.
+- **Утверждение без подтверждённой цитаты в карточку не попадает.** Цитата подтверждена, если её нормализованный текст входит в текст указанной реплики **кандидата**. Это ядро задачи, а не деталь. Требование «минимум одна цитата» проверяется **кодом, а не схемой ответа модели**: схема, обязывающая приложить цитату к каждому полю, вынуждает модель выдумать её там, где сказать нечего.
+- **Порог достаточности данных.** Если английской речи кандидата меньше 60 секунд или меньше трёх реплик, блоки оценки показывают «недостаточно данных для оценки» вместо буквы CEFR или вывода. Оценка по сорока секундам — та самая необоснованность, от которой уходит задача.
+- **Цифры пауз на карточку не выводятся** — они идут только в анализ как нейтральный контекст. На экране рекрутер видит из числовых характеристик только длительность разговора.
+- **Анализ запускается на сервере** роутом `/api/turns` при получении признака «разговор закончен». Клиент его не дёргает: закрытая вкладка и прерванная сессия должны получить карточку так же, как обычная. Страница карточки держит вторую попытку.
+- **Мягкий лимит на прогоны:** не больше 30 сессий в час на всё демо и автозавершение разговора на 15-й минуте. Демо-ссылка публичная, квота одна.
+- **Structured Outputs, точные значения** (проверено 11.08.2026):
+  - `strict: true` задаётся **явно**; если его опустить, Responses API молча переходит в нестрогий режим и гарантии формы теряются
+  - под `strict` **все** поля обязаны быть в `required`; необязательное поле выражается union-типом с `null` (`z.string().nullable()`, не `.optional()`)
+  - `additionalProperties: false` обязателен на каждом объекте; корень схемы — объект, не union
+  - рекомендованный путь SDK: `client.responses.parse()` с `zodTextFormat(schema, name)`, результат читается из `response.output_parsed`
+- **Vercel, точные значения** (проверено 11.08.2026):
+  - `maxDuration` по умолчанию **300 секунд на всех тарифах**, включая Hobby; на Hobby это же и максимум
+  - тело запроса и ответа функции ограничено **4.5 МБ** — аудио грузится в Blob напрямую с клиента, не через функцию
+  - файлы, читаемые через `fs` из `process.cwd()`, могут не попасть в бандл; поэтому конфиг роли подключается **статическим импортом**, а не чтением с диска
+  - `onUploadCompleted` у Blob **не срабатывает на localhost** — URL загруженного файла регистрирует сам клиент отдельным запросом
+  - `put()` с существующим `pathname` по умолчанию **падает**; для перезаписи нужен `allowOverwrite: true`
 - **Realtime API, точные значения** (проверено 11.08.2026):
   - эфемерный ключ: `POST https://api.openai.com/v1/realtime/client_secrets`, тело `{ session: {...}, expires_after: { anchor: 'created_at', seconds: 120 } }`, берём `.value`
   - SDP: `POST https://api.openai.com/v1/realtime/calls`, `Content-Type: application/sdp`, `Authorization: Bearer ek_...`, ответ — сырой SDP-текст, **без** `?model=`
@@ -92,7 +107,7 @@ npx create-next-app@latest . --typescript --tailwind --app --eslint --no-src-dir
 - [ ] **Step 3: Поставить зависимости проекта**
 
 ```bash
-npm install openai @neondatabase/serverless @vercel/blob
+npm install openai zod @neondatabase/serverless @vercel/blob
 npm install -D vitest @vitejs/plugin-react
 ```
 
@@ -446,6 +461,9 @@ export type LanguageBlock = {
   subscores: CefrSubscore[]
 }
 
+/** Оценка не выдаётся, когда речи кандидата слишком мало, чтобы её обосновать. */
+export type Insufficient = { insufficient: true; reason: string }
+
 export type Confidence = 'low' | 'medium' | 'high'
 
 export type DeliverySignal = {
@@ -470,10 +488,13 @@ export type Facts = {
 export type Card = {
   facts: Facts
   structure: StructureBlock
-  language: LanguageBlock
-  delivery: DeliveryBlock
+  language: LanguageBlock | Insufficient
+  delivery: DeliveryBlock | Insufficient
   droppedClaims: number
 }
+
+export const isInsufficient = (block: unknown): block is Insufficient =>
+  !!block && (block as Insufficient).insufficient === true
 
 export type SessionRecord = {
   id: string
@@ -524,6 +545,7 @@ git commit -m "feat: типы домена"
   - `addAudioChunk(id: string, url: string): Promise<void>`
   - `setAudioUrl(id: string, url: string): Promise<void>`
   - `saveAnalysis(id: string, metrics: Metrics, card: Card): Promise<void>`
+  - `countSessionsSince(since: Date): Promise<number>` — для мягкого лимита на прогоны
 
 - [ ] **Step 1: Написать скрипт создания схемы**
 
@@ -658,6 +680,13 @@ export async function setAudioUrl(id: string, url: string) {
   await sql`UPDATE sessions SET audio_url = ${url} WHERE id = ${id}`
 }
 
+export async function countSessionsSince(since: Date) {
+  const rows = (await sql`
+    SELECT count(*)::int AS n FROM sessions WHERE started_at > ${since.toISOString()}
+  `) as { n: number }[]
+  return rows[0].n
+}
+
 export async function saveAnalysis(id: string, metrics: Metrics, card: Card) {
   await sql`
     UPDATE sessions
@@ -777,8 +806,7 @@ Expected: FAIL — нет модуля `@/lib/roles`
 `src/lib/roles.ts`:
 
 ```ts
-import fs from 'node:fs'
-import path from 'node:path'
+import unimatchDefault from '../../config/roles/unimatch-default.json'
 
 export type RoleQuestion = { id: string; label: string; ask: string; needsExample?: boolean }
 export type RoleConfig = {
@@ -790,10 +818,19 @@ export type RoleConfig = {
   faq: { q: string; a: string }[]
 }
 
+/**
+ * Роли подключаются статическим импортом, а не чтением с диска: файл, который читают
+ * через fs из process.cwd(), может не попасть в serverless-бандл Vercel — и тогда
+ * локально всё работает, а в проде роут падает.
+ */
+const ROLES: Record<string, RoleConfig> = {
+  'unimatch-default': unimatchDefault as RoleConfig,
+}
+
 export function loadRole(id: string): RoleConfig {
-  const file = path.join(process.cwd(), 'config', 'roles', `${id}.json`)
-  if (!fs.existsSync(file)) throw new Error(`Unknown role: ${id}`)
-  return JSON.parse(fs.readFileSync(file, 'utf8')) as RoleConfig
+  const role = ROLES[id]
+  if (!role) throw new Error(`Unknown role: ${id}`)
+  return role
 }
 
 export function buildInstructions(role: RoleConfig): string {
@@ -1109,10 +1146,11 @@ Expected: FAIL — нет модуля роута
 `src/app/api/session/route.ts`:
 
 ```ts
-import { createSession } from '@/lib/db'
+import { countSessionsSince, createSession } from '@/lib/db'
 import { buildInstructions, loadRole } from '@/lib/roles'
 
 const DEFAULT_ROLE = 'unimatch-default'
+const MAX_SESSIONS_PER_HOUR = 30
 
 export async function POST(req: Request) {
   let payload: { candidateName?: string; roleId?: string }
@@ -1131,6 +1169,16 @@ export async function POST(req: Request) {
     role = loadRole(roleId)
   } catch {
     return Response.json({ error: `Unknown role: ${roleId}` }, { status: 400 })
+  }
+
+  // Демо-ссылка публичная, а квота одна: лучше честный отказ здесь, чем сгоревшая
+  // квота посреди чужого интервью.
+  const recent = await countSessionsSince(new Date(Date.now() - 60 * 60 * 1000))
+  if (recent >= MAX_SESSIONS_PER_HOUR) {
+    return Response.json(
+      { error: 'This demo has hit its hourly interview limit. Please try again in an hour.' },
+      { status: 429 },
+    )
   }
 
   const res = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
@@ -1196,8 +1244,8 @@ git commit -m "feat: роут создания сессии и выдачи эф
 - Create: `tests/turns-route.test.ts`
 
 **Interfaces:**
-- Consumes: `saveTurns`, `finishSession`, `getSession` из `@/lib/db`
-- Produces: `POST /api/turns` с телом `{ sessionId: string, turns: Turn[], done?: boolean, status?: 'interrupted' }` → `{ saved: number }`
+- Consumes: `saveTurns`, `finishSession`, `getSession` из `@/lib/db`; `runAnalysis` из `@/lib/analyze/run` (задача 16 — до неё роут импортирует функцию, которой ещё нет, поэтому заглушка `src/lib/analyze/run.ts` с `export async function runAnalysis(sessionId: string) {}` создаётся здесь и наполняется в задаче 16)
+- Produces: `POST /api/turns` с телом `{ sessionId: string, turns: Turn[], done?: boolean, status?: 'interrupted' }` → `{ saved: number }`; при `done` сам запускает анализ
 
 - [ ] **Step 1: Написать падающий тест**
 
@@ -1209,8 +1257,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const saveTurns = vi.fn(async () => {})
 const finishSession = vi.fn(async () => {})
 const getSession = vi.fn(async () => ({ id: 's1', status: 'live' }))
+const runAnalysis = vi.fn(async () => ({ droppedClaims: 0 }))
 
 vi.mock('@/lib/db', () => ({ saveTurns, finishSession, getSession }))
+vi.mock('@/lib/analyze/run', () => ({ runAnalysis }))
 
 const post = async (body: unknown) => {
   const { POST } = await import('@/app/api/turns/route')
@@ -1230,14 +1280,22 @@ describe('POST /api/turns', () => {
     expect(finishSession).not.toHaveBeenCalled()
   })
 
-  it('закрывает сессию при done', async () => {
+  it('закрывает сессию и сам запускает анализ при done', async () => {
     await post({ sessionId: 's1', turns: [turn], done: true })
     expect(finishSession).toHaveBeenCalledWith('s1', 'analyzing')
+    expect(runAnalysis).toHaveBeenCalledWith('s1')
   })
 
-  it('помечает прерванную сессию', async () => {
+  it('прерванную сессию помечает и всё равно анализирует', async () => {
     await post({ sessionId: 's1', turns: [turn], done: true, status: 'interrupted' })
     expect(finishSession).toHaveBeenCalledWith('s1', 'interrupted')
+    expect(runAnalysis).toHaveBeenCalledWith('s1')
+  })
+
+  it('падение анализа не ломает сохранение реплик', async () => {
+    runAnalysis.mockRejectedValueOnce(new Error('model exploded') as never)
+    const res = await post({ sessionId: 's1', turns: [turn], done: true })
+    expect(res.status).toBe(200)
   })
 
   it('404 на неизвестной сессии', async () => {
@@ -1261,8 +1319,14 @@ Expected: FAIL — нет модуля роута
 `src/app/api/turns/route.ts`:
 
 ```ts
+import { runAnalysis } from '@/lib/analyze/run'
 import { finishSession, getSession, saveTurns } from '@/lib/db'
 import type { Turn } from '@/lib/types'
+
+// Анализ идёт внутри этого же запроса: на Vercel потолок 300 секунд на всех тарифах,
+// анализ укладывается с большим запасом. Клиент анализ не дёргает — иначе закрытая
+// вкладка осталась бы без карточки.
+export const maxDuration = 300
 
 function isTurn(v: unknown): v is Turn {
   const t = v as Turn
@@ -1295,23 +1359,44 @@ export async function POST(req: Request) {
 
   const turns = payload.turns as Turn[]
   await saveTurns(sessionId, turns)
-  if (payload.done) {
-    await finishSession(sessionId, payload.status === 'interrupted' ? 'interrupted' : 'analyzing')
+
+  if (!payload.done) return Response.json({ saved: turns.length })
+
+  await finishSession(sessionId, payload.status === 'interrupted' ? 'interrupted' : 'analyzing')
+  try {
+    await runAnalysis(sessionId)
+  } catch (err) {
+    // Реплики уже сохранены, статус проставлен внутри runAnalysis. Ронять запрос нельзя:
+    // клиента может уже не быть, а транскрипт терять из-за упавшего анализа глупо.
+    console.error('analysis after interview failed', sessionId, err)
   }
   return Response.json({ saved: turns.length })
 }
 ```
 
-- [ ] **Step 4: Запустить тесты, убедиться что проходят**
+- [ ] **Step 4: Создать заглушку анализа**
+
+Роут импортирует `runAnalysis`, которая наполняется в задаче 16. Чтобы задача была
+самодостаточной и тесты проходили, создать `src/lib/analyze/run.ts`:
+
+```ts
+/** Наполняется в задаче 16. Здесь — чтобы роут /api/turns был работоспособен и тестируем. */
+export async function runAnalysis(sessionId: string): Promise<{ droppedClaims: number }> {
+  console.warn('runAnalysis is not implemented yet', sessionId)
+  return { droppedClaims: 0 }
+}
+```
+
+- [ ] **Step 5: Запустить тесты, убедиться что проходят**
 
 Run: `npx vitest run tests/turns-route.test.ts`
-Expected: PASS, 5 тестов
+Expected: PASS, 6 тестов
 
-- [ ] **Step 5: Коммит**
+- [ ] **Step 6: Коммит**
 
 ```bash
 git add -A
-git commit -m "feat: роут инкрементальной записи реплик"
+git commit -m "feat: роут записи реплик, запускающий анализ на сервере"
 ```
 
 ---
@@ -2080,7 +2165,7 @@ git commit -m "feat: кандидатский флоу — согласие, м�
 
 **Interfaces:**
 - Consumes: `Turn`, `Metrics` из `@/lib/types`
-- Produces: `computeMetrics(turns: Turn[]): Metrics`
+- Produces: `computeMetrics(turns: Turn[]): Metrics`; `hasEnoughSpeech(metrics: Metrics): boolean`; константы `MIN_CANDIDATE_SPEECH_SEC = 60`, `MIN_CANDIDATE_TURNS = 3`
 
 - [ ] **Step 1: Написать падающий тест**
 
@@ -2088,7 +2173,7 @@ git commit -m "feat: кандидатский флоу — согласие, м�
 
 ```ts
 import { describe, it, expect } from 'vitest'
-import { computeMetrics } from '@/lib/metrics'
+import { computeMetrics, hasEnoughSpeech } from '@/lib/metrics'
 import type { Turn } from '@/lib/types'
 
 const t = (id: string, speaker: Turn['speaker'], tStart: number, tEnd: number): Turn => ({
@@ -2129,6 +2214,31 @@ describe('computeMetrics', () => {
   it('переживает пустой транскрипт', () => {
     const m = computeMetrics([])
     expect(m).toMatchObject({ durationSec: 0, candidateSharePct: 0, medianPauseSec: 0, longestPauseSec: 0 })
+  })
+})
+
+describe('hasEnoughSpeech', () => {
+  it('хватает при трёх репликах и минуте речи', () => {
+    const m = computeMetrics([
+      t('c1', 'candidate', 0, 25), t('c2', 'candidate', 30, 55), t('c3', 'candidate', 60, 75),
+    ])
+    expect(hasEnoughSpeech(m)).toBe(true)
+  })
+
+  it('не хватает при односложных ответах', () => {
+    const m = computeMetrics([
+      t('c1', 'candidate', 0, 2), t('c2', 'candidate', 5, 7), t('c3', 'candidate', 9, 11),
+    ])
+    expect(hasEnoughSpeech(m)).toBe(false)
+  })
+
+  it('не хватает при одной длинной реплике: одного ответа мало для оценки', () => {
+    const m = computeMetrics([t('c1', 'candidate', 0, 200)])
+    expect(hasEnoughSpeech(m)).toBe(false)
+  })
+
+  it('не хватает при пустом разговоре', () => {
+    expect(hasEnoughSpeech(computeMetrics([]))).toBe(false)
   })
 })
 ```
@@ -2187,18 +2297,32 @@ export function computeMetrics(turns: Turn[]): Metrics {
     longestPauseSec: pauseValues.length ? Math.max(...pauseValues) : 0,
   }
 }
+
+export const MIN_CANDIDATE_SPEECH_SEC = 60
+export const MIN_CANDIDATE_TURNS = 3
+
+/**
+ * Порог, ниже которого оценку уровня языка и манеры речи выдавать нечестно.
+ * Оба условия обязательны: одна длинная реплика — это один ответ, а не разговор.
+ */
+export function hasEnoughSpeech(metrics: Metrics): boolean {
+  return (
+    metrics.candidateSpeechSec >= MIN_CANDIDATE_SPEECH_SEC &&
+    metrics.candidateTurnCount >= MIN_CANDIDATE_TURNS
+  )
+}
 ```
 
 - [ ] **Step 4: Запустить тесты, убедиться что проходят**
 
 Run: `npx vitest run tests/metrics.test.ts`
-Expected: PASS, 4 теста
+Expected: PASS, 8 тестов
 
 - [ ] **Step 5: Коммит**
 
 ```bash
 git add -A
-git commit -m "feat: расчёт нейтральных метрик разговора"
+git commit -m "feat: нейтральные метрики разговора и порог достаточности речи"
 ```
 
 ---
@@ -2365,7 +2489,7 @@ git commit -m "feat: валидация цитат — утверждение б
 **Interfaces:**
 - Consumes: `RoleConfig` из `@/lib/roles`; `Metrics`, `Turn` из `@/lib/types`
 - Produces:
-  - `STRUCTURE_SCHEMA`, `LANGUAGE_SCHEMA`, `DELIVERY_SCHEMA` — объекты JSON Schema со `strict: true`
+  - `StructureResult`, `LanguageResult`, `DeliveryResult`, `FactsResult` — Zod-схемы для `zodTextFormat`
   - `renderTranscript(turns: Turn[]): string`
   - `structurePrompt(role: RoleConfig, transcript: string): string`
   - `languagePrompt(transcript: string): string`
@@ -2383,152 +2507,82 @@ fetch('https://api.openai.com/v1/models', { headers: { Authorization: 'Bearer ' 
 
 Выбрать самую сильную доступную текстовую модель с поддержкой structured outputs, вписать её id в `.env.local` и в переменные Vercel как `OPENAI_ANALYSIS_MODEL`. Записать выбор в `docs/realtime-probe-findings.md`.
 
-- [ ] **Step 2: Написать схемы**
+- [ ] **Step 2: Написать Zod-схемы результатов анализа**
 
 `src/lib/analyze/schemas.ts`:
 
 ```ts
-const evidenceArray = {
-  type: 'array',
-  minItems: 1,
-  items: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['turnId', 'quote'],
-    properties: {
-      turnId: { type: 'string', description: 'id реплики кандидата из транскрипта' },
-      quote: { type: 'string', description: 'дословный фрагмент этой реплики' },
-    },
-  },
-} as const
+import { z } from 'zod'
 
-const starElement = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['present', 'note', 'evidence'],
-  properties: {
-    present: { type: 'boolean' },
-    note: { type: 'string' },
-    evidence: evidenceArray,
-  },
-} as const
+const evidence = z.object({
+  turnId: z.string().describe('id реплики КАНДИДАТА из транскрипта'),
+  quote: z.string().describe('дословный фрагмент этой реплики'),
+})
 
-export const STRUCTURE_SCHEMA = {
-  name: 'structure_analysis',
-  strict: true,
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['summary', 'coverage', 'example'],
-    properties: {
-      summary: { type: 'string' },
-      coverage: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['questionId', 'answered', 'note', 'evidence'],
-          properties: {
-            questionId: { type: 'string' },
-            answered: { type: 'string', enum: ['yes', 'partial', 'off_topic'] },
-            note: { type: 'string' },
-            evidence: evidenceArray,
-          },
-        },
-      },
-      example: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['situation', 'action', 'result'],
-        properties: { situation: starElement, action: starElement, result: starElement },
-      },
-    },
-  },
-} as const
+/**
+ * Пустой список допустим намеренно. Требование «минимум одна цитата» проверяет код:
+ * схема, обязывающая приложить цитату к каждому полю, вынуждает модель выдумать её
+ * там, где сказать нечего.
+ */
+const evidenceList = z.array(evidence)
 
-const bands = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const
+const starElement = z.object({
+  present: z.boolean(),
+  note: z.string(),
+  evidence: evidenceList,
+})
 
-export const LANGUAGE_SCHEMA = {
-  name: 'language_analysis',
-  strict: true,
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['summary', 'rangeLow', 'rangeHigh', 'subscores'],
-    properties: {
-      summary: { type: 'string' },
-      rangeLow: { type: 'string', enum: bands },
-      rangeHigh: { type: 'string', enum: bands },
-      subscores: {
-        type: 'array',
-        minItems: 3,
-        maxItems: 3,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['name', 'band', 'note', 'evidence'],
-          properties: {
-            name: { type: 'string', enum: ['grammar', 'vocabulary', 'coherence'] },
-            band: { type: 'string', enum: bands },
-            note: { type: 'string' },
-            evidence: evidenceArray,
-          },
-        },
-      },
-    },
-  },
-} as const
+export const StructureResult = z.object({
+  summary: z.string(),
+  coverage: z.array(
+    z.object({
+      questionId: z.string(),
+      answered: z.enum(['yes', 'partial', 'off_topic']),
+      note: z.string(),
+      evidence: evidenceList,
+    }),
+  ),
+  example: z.object({ situation: starElement, action: starElement, result: starElement }),
+})
 
-export const DELIVERY_SCHEMA = {
-  name: 'delivery_analysis',
-  strict: true,
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['summary', 'signals'],
-    properties: {
-      summary: { type: 'string' },
-      signals: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['label', 'confidence', 'whatToCheck', 'evidence'],
-          properties: {
-            label: { type: 'string' },
-            confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-            whatToCheck: { type: 'string' },
-            evidence: evidenceArray,
-          },
-        },
-      },
-    },
-  },
-} as const
+const band = z.enum(['A1', 'A2', 'B1', 'B2', 'C1', 'C2'])
 
-export const FACTS_SCHEMA = {
-  name: 'facts_extraction',
-  strict: true,
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['location', 'workRight', 'domainExperience', 'workFormat', 'startDate'],
-    properties: Object.fromEntries(
-      ['location', 'workRight', 'domainExperience', 'workFormat', 'startDate'].map((key) => [
-        key,
-        {
-          type: 'object',
-          additionalProperties: false,
-          required: ['value', 'evidence'],
-          properties: {
-            value: { type: ['string', 'null'] },
-            evidence: evidenceArray,
-          },
-        },
-      ]),
-    ),
-  },
-} as const
+export const LanguageResult = z.object({
+  summary: z.string(),
+  rangeLow: band,
+  rangeHigh: band,
+  subscores: z.array(
+    z.object({
+      name: z.enum(['grammar', 'vocabulary', 'coherence']),
+      band,
+      note: z.string(),
+      evidence: evidenceList,
+    }),
+  ),
+})
+
+export const DeliveryResult = z.object({
+  summary: z.string(),
+  signals: z.array(
+    z.object({
+      label: z.string(),
+      confidence: z.enum(['low', 'medium', 'high']),
+      whatToCheck: z.string(),
+      evidence: evidenceList,
+    }),
+  ),
+})
+
+// Нельзя `.optional()`: под strict все поля обязательны, «нет значения» выражается null.
+const fact = z.object({ value: z.string().nullable(), evidence: evidenceList })
+
+export const FactsResult = z.object({
+  location: fact,
+  workRight: fact,
+  domainExperience: fact,
+  workFormat: fact,
+  startDate: fact,
+})
 ```
 
 - [ ] **Step 3: Написать падающий тест промптов**
@@ -2727,6 +2781,9 @@ git commit -m "feat: схемы и промпты анализа с запрет
 
 - [ ] **Step 1: Написать фикстуры транскриптов**
 
+Длительности реплик подобраны так, чтобы три первые фикстуры проходили порог
+достаточности (от 60 секунд речи и от 3 реплик), а четвёртая — намеренно нет.
+
 `tests/fixtures/transcripts.ts`:
 
 ```ts
@@ -2739,35 +2796,45 @@ const turn = (id: string, speaker: Turn['speaker'], text: string, tStart: number
 /** Структурный кандидат: отвечает по существу, в примере есть ситуация, действие и результат. */
 export const strongCandidate: Turn[] = [
   turn('a1', 'agent', 'Where are you based, and can you work as a contractor?', 0, 4),
-  turn('c1', 'candidate', 'I am based in Lisbon, and yes, I have been invoicing as a contractor for three years.', 5, 12),
-  turn('a2', 'agent', 'Tell me about your experience with students, then one specific case.', 13, 17),
-  turn('c2', 'candidate', 'I spent two years at an education agency handling applications. One student had been rejected twice and came to me in June with a September deadline. I rebuilt her list around three programmes that matched her grades, rewrote her statement with her over four sessions, and she was admitted in August.', 19, 48),
-  turn('a3', 'agent', 'What working setup are you looking for?', 49, 52),
-  turn('c3', 'candidate', 'Full time and fully remote suits me, I have worked across time zones before.', 53, 59),
-  turn('a4', 'agent', 'When could you start?', 60, 62),
-  turn('c4', 'candidate', 'Three weeks from now, I need to wrap up my current contract.', 63, 68),
+  turn('c1', 'candidate', 'I am based in Lisbon, and yes, I have been invoicing as a contractor for three years, so the paperwork side is familiar to me.', 5, 14),
+  turn('a2', 'agent', 'Tell me about your experience with students, then one specific case.', 15, 19),
+  turn('c2', 'candidate', 'I spent two years at an education agency handling applications end to end. One student had been rejected twice and came to me in June with a September deadline. I rebuilt her list around three programmes that actually matched her grades, rewrote her personal statement with her over four sessions, and chased the referee who was holding things up. She was admitted in August, and she started that autumn.', 21, 72),
+  turn('a3', 'agent', 'What working setup are you looking for?', 73, 76),
+  turn('c3', 'candidate', 'Full time and fully remote suits me best. I have worked across time zones before, so overlapping a few hours a day is something I am used to organising.', 77, 89),
+  turn('a4', 'agent', 'When could you start?', 90, 92),
+  turn('c4', 'candidate', 'Three weeks from now, because I need to wrap up my current contract properly and hand over my caseload.', 93, 101),
 ]
 
-/** Слабая структура: уходит от вопроса, в примере нет ни действия, ни результата. */
+/** Слабая структура: уходит от вопроса, говорит много, но в примере нет ни действия, ни результата. */
 export const weakCandidate: Turn[] = [
   turn('a1', 'agent', 'Where are you based, and can you work as a contractor?', 0, 4),
-  turn('c1', 'candidate', 'I am very interested in this role, it is exactly what I am looking for right now.', 5, 11),
-  turn('a2', 'agent', 'Sure — but where are you based?', 12, 15),
-  turn('c2', 'candidate', 'In Europe, more or less.', 16, 19),
-  turn('a3', 'agent', 'Tell me about a specific case you handled.', 20, 23),
-  turn('c3', 'candidate', 'We did a lot of work with students, the team was really good and everyone was happy with the results.', 25, 33),
-  turn('a4', 'agent', 'What did you personally do in that case?', 34, 37),
-  turn('c4', 'candidate', 'Mostly supporting the process, whatever was needed at the time.', 38, 43),
+  turn('c1', 'candidate', 'I am very interested in this role, it is exactly what I am looking for right now, and I think the company is doing really meaningful work in education.', 5, 17),
+  turn('a2', 'agent', 'Sure — but where are you based?', 18, 21),
+  turn('c2', 'candidate', 'In Europe, more or less, it depends on the season really.', 22, 28),
+  turn('a3', 'agent', 'Tell me about a specific case you handled.', 29, 32),
+  turn('c3', 'candidate', 'We did a lot of work with students, the team was really good and everyone was happy with the results. There were a lot of applications and we handled them together, and the feedback was positive overall, which was nice to see for everyone involved.', 34, 66),
+  turn('a4', 'agent', 'What did you personally do in that case?', 67, 70),
+  turn('c4', 'candidate', 'Mostly supporting the process, whatever was needed at the time, so a bit of everything really depending on what came up that week.', 71, 88),
 ]
 
-/** Похоже на зачитанное: письменный синтаксис, резкая смена регистра между ответами. */
+/** Похоже на зачитанное: письменный синтаксис в одном ответе, живая речь с запинками в остальных. */
 export const readingCandidate: Turn[] = [
   turn('a1', 'agent', 'Where are you based?', 0, 3),
-  turn('c1', 'candidate', 'Um, yeah, so, I am in, uh, Warsaw right now.', 4, 8),
-  turn('a2', 'agent', 'Tell me about a specific case you handled.', 9, 12),
-  turn('c2', 'candidate', 'Throughout my professional tenure I have consistently demonstrated an unwavering commitment to facilitating optimal outcomes for stakeholders, leveraging a comprehensive skill set encompassing strategic communication, meticulous attention to detail, and a proactive approach to problem resolution.', 20, 44),
-  turn('a3', 'agent', 'And what was the result in that particular case?', 45, 48),
-  turn('c3', 'candidate', 'Uh, the result, um, it was, yeah, it was good I think.', 56, 61),
+  turn('c1', 'candidate', 'Um, yeah, so, I am in, uh, Warsaw right now, I moved here like, two years ago I think.', 4, 12),
+  turn('a2', 'agent', 'Tell me about a specific case you handled.', 13, 16),
+  turn('c2', 'candidate', 'Throughout my professional tenure I have consistently demonstrated an unwavering commitment to facilitating optimal outcomes for stakeholders, leveraging a comprehensive skill set encompassing strategic communication, meticulous attention to detail, and a proactive approach to problem resolution, thereby ensuring the successful realisation of institutional objectives across a diverse portfolio of applicants.', 24, 66),
+  turn('a3', 'agent', 'And what was the result in that particular case?', 67, 70),
+  turn('c3', 'candidate', 'Uh, the result, um, it was, yeah, it was good I think, like, they were happy with it, uh, I do not remember the exact numbers to be honest.', 78, 94),
+]
+
+/** Ниже порога достаточности: односложные ответы. Оценка языка и манеры выдаваться не должна. */
+export const oneWordCandidate: Turn[] = [
+  turn('a1', 'agent', 'Where are you based?', 0, 3),
+  turn('c1', 'candidate', 'Berlin.', 4, 5),
+  turn('a2', 'agent', 'Can you work as a contractor there?', 6, 9),
+  turn('c2', 'candidate', 'Yes.', 10, 11),
+  turn('a3', 'agent', 'Tell me about a case you handled.', 12, 15),
+  turn('c3', 'candidate', 'Many cases.', 16, 18),
 ]
 ```
 
@@ -2777,16 +2844,17 @@ export const readingCandidate: Turn[] = [
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { strongCandidate } from './fixtures/transcripts'
+import { oneWordCandidate, strongCandidate } from './fixtures/transcripts'
 
-const create = vi.fn()
+const parse = vi.fn()
 vi.mock('openai', () => ({
   default: class {
-    responses = { create }
+    responses = { parse }
   },
 }))
+vi.mock('openai/helpers/zod', () => ({ zodTextFormat: (_s: unknown, name: string) => ({ type: 'json_schema', name }) }))
 
-const jsonResponse = (payload: unknown) => ({ output_text: JSON.stringify(payload) })
+const parsed = (output_parsed: unknown) => ({ output_parsed })
 
 const structure = {
   summary: 'Answers what is asked.',
@@ -2794,7 +2862,7 @@ const structure = {
   example: {
     situation: { present: true, note: 'Rejected twice, tight deadline.', evidence: [{ turnId: 'c2', quote: 'had been rejected twice' }] },
     action: { present: true, note: 'Rebuilt the list herself.', evidence: [{ turnId: 'c2', quote: 'I rebuilt her list' }] },
-    result: { present: true, note: 'Admitted in August.', evidence: [{ turnId: 'c2', quote: 'she was admitted in August' }] },
+    result: { present: true, note: 'Admitted in August.', evidence: [{ turnId: 'c2', quote: 'She was admitted in August' }] },
   },
 }
 
@@ -2803,7 +2871,7 @@ const language = {
   rangeLow: 'B2', rangeHigh: 'C1',
   subscores: [
     { name: 'grammar', band: 'C1', note: 'Past perfect used correctly.', evidence: [{ turnId: 'c2', quote: 'had been rejected twice' }] },
-    { name: 'vocabulary', band: 'B2', note: 'Domain words are precise.', evidence: [{ turnId: 'c2', quote: 'rewrote her statement' }] },
+    { name: 'vocabulary', band: 'B2', note: 'Domain words are precise.', evidence: [{ turnId: 'c2', quote: 'rewrote her personal statement' }] },
     { name: 'coherence', band: 'C1', note: 'Narrates in order.', evidence: [{ turnId: 'c2', quote: 'came to me in June' }] },
   ],
 }
@@ -2817,14 +2885,19 @@ const facts = {
   startDate: { value: 'In three weeks', evidence: [{ turnId: 'c4', quote: 'Three weeks from now' }] },
 }
 
+/** Порядок вызовов в buildCard: структура, язык, манера, факты. */
+function mockAll(overrides: Partial<Record<'structure' | 'language' | 'delivery' | 'facts', unknown>> = {}) {
+  parse.mockReset()
+  parse
+    .mockResolvedValueOnce(parsed(overrides.structure ?? structure))
+    .mockResolvedValueOnce(parsed(overrides.language ?? language))
+    .mockResolvedValueOnce(parsed(overrides.delivery ?? delivery))
+    .mockResolvedValueOnce(parsed(overrides.facts ?? facts))
+}
+
 beforeEach(() => {
-  vi.clearAllMocks()
   process.env.OPENAI_ANALYSIS_MODEL = 'test-model'
-  create
-    .mockResolvedValueOnce(jsonResponse(structure))
-    .mockResolvedValueOnce(jsonResponse(language))
-    .mockResolvedValueOnce(jsonResponse(delivery))
-    .mockResolvedValueOnce(jsonResponse(facts))
+  mockAll()
 })
 
 describe('buildCard', () => {
@@ -2832,25 +2905,21 @@ describe('buildCard', () => {
     const { buildCard } = await import('@/lib/analyze')
     const { card, metrics } = await buildCard({ turns: strongCandidate, roleId: 'unimatch-default' })
 
-    expect(card.language.rangeLow).toBe('B2')
+    expect(card.language).toMatchObject({ rangeLow: 'B2', rangeHigh: 'C1' })
     expect(card.structure.coverage).toHaveLength(1)
     expect(card.structure.coverage[0].questionLabel).toBe('Локация и право на работу')
     expect(card.facts.location.value).toBe('Lisbon')
     expect(metrics.candidateTurnCount).toBe(4)
-    expect(create).toHaveBeenCalledTimes(4)
+    expect(parse).toHaveBeenCalledTimes(4)
   })
 
   it('выбрасывает выдуманные цитаты и считает выброшенное', async () => {
-    vi.clearAllMocks()
-    create
-      .mockResolvedValueOnce(jsonResponse({
+    mockAll({
+      structure: {
         ...structure,
         coverage: [{ questionId: 'location', answered: 'yes', note: 'x', evidence: [{ turnId: 'c1', quote: 'I have a PhD from Oxford' }] }],
-      }))
-      .mockResolvedValueOnce(jsonResponse(language))
-      .mockResolvedValueOnce(jsonResponse(delivery))
-      .mockResolvedValueOnce(jsonResponse(facts))
-
+      },
+    })
     const { buildCard } = await import('@/lib/analyze')
     const { card } = await buildCard({ turns: strongCandidate, roleId: 'unimatch-default' })
     expect(card.structure.coverage).toHaveLength(0)
@@ -2858,19 +2927,27 @@ describe('buildCard', () => {
   })
 
   it('обнуляет факт, чья цитата не подтвердилась', async () => {
-    vi.clearAllMocks()
-    create
-      .mockResolvedValueOnce(jsonResponse(structure))
-      .mockResolvedValueOnce(jsonResponse(language))
-      .mockResolvedValueOnce(jsonResponse(delivery))
-      .mockResolvedValueOnce(jsonResponse({
-        ...facts,
-        startDate: { value: 'Tomorrow', evidence: [{ turnId: 'c4', quote: 'I can start tomorrow' }] },
-      }))
-
+    mockAll({
+      facts: { ...facts, startDate: { value: 'Tomorrow', evidence: [{ turnId: 'c4', quote: 'I can start tomorrow' }] } },
+    })
     const { buildCard } = await import('@/lib/analyze')
     const { card } = await buildCard({ turns: strongCandidate, roleId: 'unimatch-default' })
     expect(card.facts.startDate).toEqual({ value: null, evidence: [] })
+  })
+
+  it('не оценивает язык и манеру при односложных ответах и не тратит на это вызовы', async () => {
+    parse.mockReset()
+    parse
+      .mockResolvedValueOnce(parsed({ ...structure, coverage: [] }))
+      .mockResolvedValueOnce(parsed({ location: facts.location, workRight: facts.workRight, domainExperience: { value: null, evidence: [] }, workFormat: { value: null, evidence: [] }, startDate: { value: null, evidence: [] } }))
+
+    const { buildCard } = await import('@/lib/analyze')
+    const { card } = await buildCard({ turns: oneWordCandidate, roleId: 'unimatch-default' })
+
+    expect(card.language).toMatchObject({ insufficient: true })
+    expect(card.delivery).toMatchObject({ insufficient: true })
+    expect((card.language as { reason: string }).reason).toMatch(/60/)
+    expect(parse).toHaveBeenCalledTimes(2)
   })
 
   it('отказывается анализировать разговор без реплик кандидата', async () => {
@@ -2893,24 +2970,25 @@ Expected: FAIL — нет модуля `@/lib/analyze`
 
 ```ts
 import OpenAI from 'openai'
+import { zodTextFormat } from 'openai/helpers/zod'
+import type { z } from 'zod'
 import { keepSupported, validateEvidence } from '../evidence'
-import { computeMetrics } from '../metrics'
+import { computeMetrics, hasEnoughSpeech, MIN_CANDIDATE_SPEECH_SEC, MIN_CANDIDATE_TURNS } from '../metrics'
 import { loadRole } from '../roles'
-import type { Card, DeliveryBlock, Facts, LanguageBlock, Metrics, StructureBlock, Turn } from '../types'
+import type { Card, Facts, Metrics, Turn } from '../types'
 import { deliveryPrompt, factsPrompt, languagePrompt, renderTranscript, structurePrompt } from './prompts'
-import { DELIVERY_SCHEMA, FACTS_SCHEMA, LANGUAGE_SCHEMA, STRUCTURE_SCHEMA } from './schemas'
+import { DeliveryResult, FactsResult, LanguageResult, StructureResult } from './schemas'
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-async function ask<T>(prompt: string, schema: { name: string; schema: unknown; strict: boolean }): Promise<T> {
-  const res = await client.responses.create({
+async function ask<T>(prompt: string, schema: z.ZodType<T>, name: string): Promise<T> {
+  const res = await client.responses.parse({
     model: process.env.OPENAI_ANALYSIS_MODEL!,
     input: prompt,
-    text: { format: { type: 'json_schema', ...schema } },
+    text: { format: zodTextFormat(schema, name) },
   })
-  const text = (res as { output_text?: string }).output_text
-  if (!text) throw new Error(`Analysis returned no output for ${schema.name}`)
-  return JSON.parse(text) as T
+  if (!res.output_parsed) throw new Error(`Analysis returned no parsed output for ${name}`)
+  return res.output_parsed
 }
 
 export async function buildCard(input: { turns: Turn[]; roleId: string }): Promise<{ card: Card; metrics: Metrics }> {
@@ -2923,23 +3001,30 @@ export async function buildCard(input: { turns: Turn[]; roleId: string }): Promi
   const metrics = computeMetrics(turns)
   const transcript = renderTranscript(turns)
 
+  // Уровень языка и манеру речи по сорока секундам речи оценивать нечестно, поэтому
+  // при нехватке данных эти два вызова просто не делаются — экономим и деньги, и обман.
+  const enough = hasEnoughSpeech(metrics)
+  const shortfall =
+    `Английской речи кандидата ${Math.round(metrics.candidateSpeechSec)} с в ` +
+    `${metrics.candidateTurnCount} репл.; для обоснованной оценки нужно от ` +
+    `${MIN_CANDIDATE_SPEECH_SEC} с и от ${MIN_CANDIDATE_TURNS} реплик.`
+
   const [rawStructure, rawLanguage, rawDelivery, rawFacts] = await Promise.all([
-    ask<StructureBlock>(structurePrompt(role, transcript), STRUCTURE_SCHEMA),
-    ask<LanguageBlock>(languagePrompt(transcript), LANGUAGE_SCHEMA),
-    ask<DeliveryBlock>(deliveryPrompt(transcript, metrics), DELIVERY_SCHEMA),
-    ask<Facts>(factsPrompt(transcript), FACTS_SCHEMA),
+    ask(structurePrompt(role, transcript), StructureResult, 'structure_analysis'),
+    enough ? ask(languagePrompt(transcript), LanguageResult, 'language_analysis') : null,
+    enough ? ask(deliveryPrompt(transcript, metrics), DeliveryResult, 'delivery_analysis') : null,
+    ask(factsPrompt(transcript), FactsResult, 'facts_extraction'),
   ])
 
   let dropped = 0
 
-  const labelOf = (questionId: string) =>
-    role.questions.find((q) => q.id === questionId)?.label ?? questionId
+  const labelOf = (questionId: string) => role.questions.find((q) => q.id === questionId)?.label ?? questionId
 
-  const coverage = keepSupported(rawStructure.coverage ?? [], turns)
+  const coverage = keepSupported(rawStructure.coverage, turns)
   dropped += coverage.dropped
 
-  const star = (element: { present: boolean; note: string; evidence: never[] }) => {
-    const evidence = validateEvidence(element?.evidence ?? [], turns)
+  const star = (element: { present: boolean; note: string; evidence: { turnId: string; quote: string }[] }) => {
+    const evidence = validateEvidence(element.evidence, turns)
     if (evidence.length === 0) {
       dropped++
       return { present: false, note: 'Не подтверждено цитатой из разговора.', evidence: [] }
@@ -2947,42 +3032,50 @@ export async function buildCard(input: { turns: Turn[]; roleId: string }): Promi
     return { ...element, evidence }
   }
 
-  const subscores = keepSupported(rawLanguage.subscores ?? [], turns)
-  dropped += subscores.dropped
-
-  const signals = keepSupported(rawDelivery.signals ?? [], turns)
-  dropped += signals.dropped
-
   const facts = Object.fromEntries(
     (['location', 'workRight', 'domainExperience', 'workFormat', 'startDate'] as const).map((key) => {
       const fact = rawFacts[key]
-      const evidence = validateEvidence(fact?.evidence ?? [], turns)
+      const evidence = validateEvidence(fact.evidence, turns)
       if (evidence.length === 0) {
-        if (fact?.value) dropped++
+        if (fact.value) dropped++
         return [key, { value: null, evidence: [] }]
       }
       return [key, { value: fact.value, evidence }]
     }),
   ) as Facts
 
-  const card: Card = {
-    facts,
-    structure: {
-      summary: rawStructure.summary ?? '',
-      coverage: coverage.kept.map((c) => ({ ...c, questionLabel: labelOf(c.questionId) })),
-      example: {
-        situation: star(rawStructure.example?.situation as never),
-        action: star(rawStructure.example?.action as never),
-        result: star(rawStructure.example?.result as never),
-      },
-    },
-    language: {
-      summary: rawLanguage.summary ?? '',
+  let language: Card['language'] = { insufficient: true, reason: shortfall }
+  if (rawLanguage) {
+    const subscores = keepSupported(rawLanguage.subscores, turns)
+    dropped += subscores.dropped
+    language = {
+      summary: rawLanguage.summary,
       rangeLow: rawLanguage.rangeLow,
       rangeHigh: rawLanguage.rangeHigh,
       subscores: subscores.kept,
+    }
+  }
+
+  let delivery: Card['delivery'] = { insufficient: true, reason: shortfall }
+  if (rawDelivery) {
+    const signals = keepSupported(rawDelivery.signals, turns)
+    dropped += signals.dropped
+    delivery = { summary: rawDelivery.summary, signals: signals.kept }
+  }
+
+  const card: Card = {
+    facts,
+    structure: {
+      summary: rawStructure.summary,
+      coverage: coverage.kept.map((c) => ({ ...c, questionLabel: labelOf(c.questionId) })),
+      example: {
+        situation: star(rawStructure.example.situation),
+        action: star(rawStructure.example.action),
+        result: star(rawStructure.example.result),
+      },
     },
-    delivery: { summary: rawDelivery.summary ?? '', signals: signals.kept },
+    language,
+    delivery,
     droppedClaims: dropped,
   }
 
@@ -2993,22 +3086,32 @@ export async function buildCard(input: { turns: Turn[]; roleId: string }): Promi
 - [ ] **Step 5: Запустить тесты, убедиться что проходят**
 
 Run: `npx vitest run tests/analyze.test.ts`
-Expected: PASS, 4 теста
+Expected: PASS, 5 тестов
 
-- [ ] **Step 6: Прогнать анализ на трёх фикстурах живой моделью**
+- [ ] **Step 6: Прогнать анализ на всех фикстурах живой моделью**
 
 ```bash
 node --env-file=.env.local --experimental-strip-types -e "
 import { buildCard } from './src/lib/analyze/index.ts'
-import { strongCandidate, weakCandidate, readingCandidate } from './tests/fixtures/transcripts.ts'
-for (const [name, turns] of Object.entries({ strongCandidate, weakCandidate, readingCandidate })) {
+import { strongCandidate, weakCandidate, readingCandidate, oneWordCandidate } from './tests/fixtures/transcripts.ts'
+for (const [name, turns] of Object.entries({ strongCandidate, weakCandidate, readingCandidate, oneWordCandidate })) {
   const { card } = await buildCard({ turns, roleId: 'unimatch-default' })
   console.log('===', name, JSON.stringify(card, null, 2))
 }
 "
 ```
 
-Проверить глазами, что модель не путает случаи: у сильного — `answered: yes` и все три элемента примера на месте; у слабого — `off_topic`/`partial` и отсутствующие действие с результатом; у зачитывающего — сигнал в `delivery.signals` про смену регистра, а не про длину паузы. Если путает — править промпты в задаче 14 и повторять.
+Проверить глазами, что модель не путает случаи:
+
+| Фикстура | Что должно быть в результате |
+|---|---|
+| `strongCandidate` | `answered: yes`, все три элемента примера на месте, уровень языка в верхней половине шкалы |
+| `weakCandidate` | `off_topic` или `partial` на локации, `present: false` у действия и результата |
+| `readingCandidate` | сигнал в `delivery.signals` про смену регистра между ответами — **не** про длину паузы |
+| `oneWordCandidate` | `insufficient: true` в блоках языка и манеры; ровно два вызова модели вместо четырёх |
+
+Если путает — править промпты в задаче 14 и повторять. Это единственное место в плане,
+где решает не тест, а глаза: качество промптов иначе не проверить.
 
 - [ ] **Step 7: Коммит**
 
