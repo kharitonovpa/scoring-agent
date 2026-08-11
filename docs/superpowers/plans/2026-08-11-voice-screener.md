@@ -107,7 +107,7 @@ npx create-next-app@latest . --typescript --tailwind --app --eslint --no-src-dir
 - [ ] **Step 3: Поставить зависимости проекта**
 
 ```bash
-npm install openai zod @neondatabase/serverless @vercel/blob
+npm install openai zod @neondatabase/serverless @vercel/blob mediabunny@^1.53.0
 npm install -D vitest @vitejs/plugin-react
 ```
 
@@ -507,8 +507,14 @@ export type SessionRecord = {
   transcript: Turn[]
   metrics: Metrics | null
   card: Card | null
+  /** Сырые чанки: страховка от обрыва. */
   audioChunks: string[]
+  /** Сырой завершённый файл рекордера, если разговор дошёл до конца. */
+  audioFullUrl: string | null
+  /** Перематываемый файл после ремукса — именно его играет карточка. */
   audioUrl: string | null
+  /** Какой секунде серверной шкалы соответствует нулевая секунда файла записи. */
+  audioOffsetSec: number | null
 }
 ```
 
@@ -539,11 +545,12 @@ git commit -m "feat: типы домена"
   - `createSession(input: { candidateName: string; roleId: string }): Promise<string>` — возвращает id
   - `getSession(id: string): Promise<SessionRecord | null>`
   - `listSessions(): Promise<Array<Pick<SessionRecord, 'id'|'candidateName'|'roleId'|'status'|'startedAt'|'endedAt'>>>`
-  - `saveTurns(id: string, turns: Turn[]): Promise<void>` — полная замена транскрипта
+  - `saveTurns(id: string, turns: Turn[], audioOffsetSec?: number | null): Promise<void>` — полная замена транскрипта; сдвиг записывается, только если передан
   - `finishSession(id: string, status: SessionStatus): Promise<void>`
   - `setStatus(id: string, status: SessionStatus): Promise<void>`
   - `addAudioChunk(id: string, url: string): Promise<void>`
-  - `setAudioUrl(id: string, url: string): Promise<void>`
+  - `setAudioFullUrl(id: string, url: string): Promise<void>` — сырой завершённый файл рекордера
+  - `setAudioUrl(id: string, url: string): Promise<void>` — перематываемый файл после ремукса
   - `saveAnalysis(id: string, metrics: Metrics, card: Card): Promise<void>`
   - `countSessionsSince(since: Date): Promise<number>` — для мягкого лимита на прогоны
 
@@ -569,7 +576,9 @@ await sql`
     metrics        jsonb,
     card           jsonb,
     audio_chunks   jsonb       NOT NULL DEFAULT '[]'::jsonb,
-    audio_url      text
+    audio_full_url text,
+    audio_url      text,
+    audio_offset_sec double precision
   )
 `
 console.log('schema ready')
@@ -608,7 +617,9 @@ type Row = {
   metrics: Metrics | null
   card: Card | null
   audio_chunks: string[]
+  audio_full_url: string | null
   audio_url: string | null
+  audio_offset_sec: number | null
 }
 
 function toRecord(row: Row): SessionRecord {
@@ -624,7 +635,9 @@ function toRecord(row: Row): SessionRecord {
     metrics: row.metrics,
     card: row.card,
     audioChunks: row.audio_chunks ?? [],
+    audioFullUrl: row.audio_full_url,
     audioUrl: row.audio_url,
+    audioOffsetSec: row.audio_offset_sec,
   }
 }
 
@@ -657,8 +670,13 @@ export async function listSessions() {
   }))
 }
 
-export async function saveTurns(id: string, turns: Turn[]) {
-  await sql`UPDATE sessions SET transcript = ${JSON.stringify(turns)}::jsonb WHERE id = ${id}`
+export async function saveTurns(id: string, turns: Turn[], audioOffsetSec?: number | null) {
+  await sql`
+    UPDATE sessions
+    SET transcript = ${JSON.stringify(turns)}::jsonb,
+        audio_offset_sec = COALESCE(${audioOffsetSec ?? null}, audio_offset_sec)
+    WHERE id = ${id}
+  `
 }
 
 export async function finishSession(id: string, status: SessionStatus) {
@@ -676,6 +694,11 @@ export async function addAudioChunk(id: string, url: string) {
   `
 }
 
+export async function setAudioFullUrl(id: string, url: string) {
+  await sql`UPDATE sessions SET audio_full_url = ${url} WHERE id = ${id}`
+}
+
+/** Ставится только после ремукса: карточка играет перематываемый файл. */
 export async function setAudioUrl(id: string, url: string) {
   await sql`UPDATE sessions SET audio_url = ${url} WHERE id = ${id}`
 }
@@ -902,6 +925,7 @@ git commit -m "feat: конфиг роли и сборка инструкций 
 - Produces:
   - `type StampedEvent = { clientTimeSec: number; event: Record<string, unknown> }`
   - `assembleTurns(events: StampedEvent[]): Turn[]` — реплики, отсортированные по `tStart`
+  - `computeAudioOffset(events: StampedEvent[], recordingStartClientSec: number): number | null` — какой секунде серверной шкалы соответствует нулевая секунда файла записи
 
 - [ ] **Step 1: Написать падающий тест**
 
@@ -909,7 +933,7 @@ git commit -m "feat: конфиг роли и сборка инструкций 
 
 ```ts
 import { describe, it, expect } from 'vitest'
-import { assembleTurns, type StampedEvent } from '@/lib/turns'
+import { assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
 
 const ev = (clientTimeSec: number, event: Record<string, unknown>): StampedEvent => ({ clientTimeSec, event })
 
@@ -973,6 +997,28 @@ describe('assembleTurns', () => {
 
   it('игнорирует незнакомые события', () => {
     expect(assembleTurns([ev(1, { type: 'session.updated' })])).toEqual([])
+  })
+})
+
+describe('computeAudioOffset', () => {
+  const speech = ev(12.5, { type: 'input_audio_buffer.speech_started', audio_start_ms: 12400, item_id: 'm1' })
+
+  it('говорит, в какой секунде серверной шкалы начинается запись', () => {
+    // Серверный нуль пришёлся на клиентские 0.1с; запись стартовала в клиентские 1.1с
+    // → нулевая секунда файла соответствует серверной 1.0с.
+    expect(computeAudioOffset([speech], 1.1)).toBeCloseTo(1.0, 3)
+  })
+
+  it('даёт ноль, когда запись стартовала вместе с серверной шкалой', () => {
+    expect(computeAudioOffset([speech], 0.1)).toBeCloseTo(0, 3)
+  })
+
+  it('допускает отрицательный сдвиг, если запись началась раньше серверной шкалы', () => {
+    expect(computeAudioOffset([speech], 0)).toBeCloseTo(-0.1, 3)
+  })
+
+  it('возвращает null, когда серверных таймингов не было', () => {
+    expect(computeAudioOffset([ev(1, { type: 'session.updated' })], 0.5)).toBeNull()
   })
 })
 ```
@@ -1056,12 +1102,32 @@ export function assembleTurns(events: StampedEvent[]): Turn[] {
 
   return [...turns.values()].sort((a, b) => a.tStart - b.tStart)
 }
+
+/**
+ * Тайминги реплик отсчитываются от начала аудио сессии на стороне OpenAI, а запись
+ * началась в свой собственный момент. Функция возвращает, какой секунде серверной шкалы
+ * соответствует нулевая секунда файла записи: вычитая это значение из tStart, получаем
+ * позицию фрагмента в файле. Без этой поправки цитата играет не те слова.
+ */
+export function computeAudioOffset(
+  events: StampedEvent[],
+  recordingStartClientSec: number,
+): number | null {
+  for (const { clientTimeSec, event } of events) {
+    if (str(event.type) !== 'input_audio_buffer.speech_started') continue
+    const ms = num(event.audio_start_ms)
+    if (ms === undefined) continue
+    const serverZeroClientSec = clientTimeSec - ms / 1000
+    return recordingStartClientSec - serverZeroClientSec
+  }
+  return null
+}
 ```
 
 - [ ] **Step 4: Запустить тесты, убедиться что проходят**
 
 Run: `npx vitest run tests/turns.test.ts`
-Expected: PASS, 6 тестов
+Expected: PASS, 10 тестов
 
 - [ ] **Step 5: Сверить с реальными данными**
 
@@ -1245,7 +1311,7 @@ git commit -m "feat: роут создания сессии и выдачи эф
 
 **Interfaces:**
 - Consumes: `saveTurns`, `finishSession`, `getSession` из `@/lib/db`; `runAnalysis` из `@/lib/analyze/run` (задача 16 — до неё роут импортирует функцию, которой ещё нет, поэтому заглушка `src/lib/analyze/run.ts` с `export async function runAnalysis(sessionId: string) {}` создаётся здесь и наполняется в задаче 16)
-- Produces: `POST /api/turns` с телом `{ sessionId: string, turns: Turn[], done?: boolean, status?: 'interrupted' }` → `{ saved: number }`; при `done` сам запускает анализ
+- Produces: `POST /api/turns` с телом `{ sessionId: string, turns: Turn[], done?: boolean, status?: 'interrupted', audioOffsetSec?: number }` → `{ saved: number }`; при `done` сам запускает анализ
 
 - [ ] **Step 1: Написать падающий тест**
 
@@ -1276,7 +1342,7 @@ describe('POST /api/turns', () => {
     const res = await post({ sessionId: 's1', turns: [turn] })
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ saved: 1 })
-    expect(saveTurns).toHaveBeenCalledWith('s1', [turn])
+    expect(saveTurns).toHaveBeenCalledWith('s1', [turn], null)
     expect(finishSession).not.toHaveBeenCalled()
   })
 
@@ -1290,6 +1356,11 @@ describe('POST /api/turns', () => {
     await post({ sessionId: 's1', turns: [turn], done: true, status: 'interrupted' })
     expect(finishSession).toHaveBeenCalledWith('s1', 'interrupted')
     expect(runAnalysis).toHaveBeenCalledWith('s1')
+  })
+
+  it('сохраняет калибровку записи, когда клиент её прислал', async () => {
+    await post({ sessionId: 's1', turns: [turn], audioOffsetSec: 1.25 })
+    expect(saveTurns).toHaveBeenCalledWith('s1', [turn], 1.25)
   })
 
   it('падение анализа не ломает сохранение реплик', async () => {
@@ -1342,7 +1413,13 @@ function isTurn(v: unknown): v is Turn {
 }
 
 export async function POST(req: Request) {
-  let payload: { sessionId?: string; turns?: unknown; done?: boolean; status?: string }
+  let payload: {
+    sessionId?: string
+    turns?: unknown
+    done?: boolean
+    status?: string
+    audioOffsetSec?: number | null
+  }
   try {
     payload = await req.json()
   } catch {
@@ -1358,7 +1435,8 @@ export async function POST(req: Request) {
   if (!(await getSession(sessionId))) return Response.json({ error: 'Unknown session' }, { status: 404 })
 
   const turns = payload.turns as Turn[]
-  await saveTurns(sessionId, turns)
+  const audioOffsetSec = typeof payload.audioOffsetSec === 'number' ? payload.audioOffsetSec : null
+  await saveTurns(sessionId, turns, audioOffsetSec)
 
   if (!payload.done) return Response.json({ saved: turns.length })
 
@@ -1390,7 +1468,7 @@ export async function runAnalysis(sessionId: string): Promise<{ droppedClaims: n
 - [ ] **Step 5: Запустить тесты, убедиться что проходят**
 
 Run: `npx vitest run tests/turns-route.test.ts`
-Expected: PASS, 6 тестов
+Expected: PASS, 7 тестов
 
 - [ ] **Step 6: Коммит**
 
@@ -1401,19 +1479,27 @@ git commit -m "feat: роут записи реплик, запускающий 
 
 ---
 
-### Task 9: Запись аудио и загрузка чанков
+### Task 9: Запись аудио двумя рекордерами
+
+От записи нужны две несовместимые вещи, поэтому рекордера два. Чанки дают устойчивость
+к обрыву, но их склейка не содержит ни длительности, ни индекса позиций — перемотка на
+конкретную секунду по ней ненадёжна. Завершённый `stop()`-ом файл перематывается, но
+существует только если разговор дошёл до конца. Пишем оба: первый — страховка, второй —
+то, что играет карточка.
 
 **Files:**
 - Create: `src/app/api/blob-token/route.ts`
+- Create: `src/app/api/audio/register/route.ts`
 - Create: `src/lib/recorder.ts`
 - Create: `tests/recorder.test.ts`
 
 **Interfaces:**
-- Consumes: `addAudioChunk` из `@/lib/db`
+- Consumes: `addAudioChunk`, `getSession`, `setAudioUrl` из `@/lib/db`
 - Produces:
   - `POST /api/blob-token` — обработчик клиентской загрузки `@vercel/blob/client`
-  - `class InterviewRecorder { constructor(sessionId: string); start(mic: MediaStream, remote: MediaStream): Promise<void>; stop(): Promise<void>; get chunkCount(): number }`
-  - `mixStreams(ctx: AudioContext, streams: MediaStream[]): MediaStream` — экспортируется отдельно для теста
+  - `POST /api/audio/register` с телом `{ sessionId, url, kind: 'chunk' | 'full' }` → `{ ok: true }`
+  - `mixStreams(ctx: AudioContext, streams: MediaStream[]): MediaStream`
+  - `class InterviewRecorder { constructor(sessionId: string); start(mic: MediaStream, remote: MediaStream): number; stop(): Promise<void>; get chunkCount(): number }` — `start` возвращает `performance.now()` момента старта записи, он нужен для калибровки таймингов
 
 - [ ] **Step 1: Реализовать роут токена загрузки**
 
@@ -1421,7 +1507,7 @@ git commit -m "feat: роут записи реплик, запускающий 
 
 ```ts
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client'
-import { addAudioChunk, getSession } from '@/lib/db'
+import { getSession } from '@/lib/db'
 
 export async function POST(req: Request) {
   const body = (await req.json()) as HandleUploadBody
@@ -1430,18 +1516,22 @@ export async function POST(req: Request) {
       body,
       request: req,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
+        // clientPayload приходит от клиента и доверия не заслуживает: проверяем,
+        // что сессия существует и что путь принадлежит именно ей.
         const sessionId = String(clientPayload ?? '')
         if (!sessionId || !(await getSession(sessionId))) throw new Error('Unknown session')
         if (!pathname.startsWith(`interviews/${sessionId}/`)) throw new Error('Bad pathname')
         return {
           allowedContentTypes: ['audio/webm', 'video/webm', 'audio/mp4'],
           addRandomSuffix: false,
+          allowOverwrite: true,
+          maximumSizeInBytes: 50 * 1024 * 1024,
           tokenPayload: sessionId,
         }
       },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        await addAudioChunk(String(tokenPayload), blob.url)
-      },
+      // Вебхук на localhost не срабатывает, поэтому URL регистрирует сам клиент
+      // через /api/audio/register. Здесь коллбэк оставлен пустым намеренно.
+      onUploadCompleted: async () => {},
     })
     return Response.json(result)
   } catch (err) {
@@ -1450,9 +1540,51 @@ export async function POST(req: Request) {
 }
 ```
 
-`onUploadCompleted` не вызывается на `localhost` — Vercel не может достучаться до локальной машины. Это ожидаемо: чанки на проде записываются, локально проверяем сам факт загрузки. Отметить это в README.
+- [ ] **Step 2: Реализовать роут регистрации загруженного аудио**
 
-- [ ] **Step 2: Написать падающий тест смешивания потоков**
+`src/app/api/audio/register/route.ts`:
+
+```ts
+import { addAudioChunk, getSession, setAudioFullUrl } from '@/lib/db'
+
+const BLOB_HOST_SUFFIX = '.public.blob.vercel-storage.com'
+
+export async function POST(req: Request) {
+  let payload: { sessionId?: string; url?: string; kind?: string }
+  try {
+    payload = await req.json()
+  } catch {
+    return Response.json({ error: 'Malformed request body' }, { status: 400 })
+  }
+
+  const { sessionId, url, kind } = payload
+  if (!sessionId || !url) return Response.json({ error: 'sessionId and url are required' }, { status: 400 })
+  if (kind !== 'chunk' && kind !== 'full') return Response.json({ error: 'kind must be chunk or full' }, { status: 400 })
+
+  // Роут открытый, поэтому принимаем только адреса своего же хранилища и только
+  // те, что лежат в папке этой сессии.
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return Response.json({ error: 'url is not a URL' }, { status: 400 })
+  }
+  if (!parsed.hostname.endsWith(BLOB_HOST_SUFFIX) || !parsed.pathname.includes(`/interviews/${sessionId}/`)) {
+    return Response.json({ error: 'url does not belong to this session' }, { status: 400 })
+  }
+
+  if (!(await getSession(sessionId))) return Response.json({ error: 'Unknown session' }, { status: 404 })
+
+  // Сырой файл только регистрируется. Карточка играет результат ремукса — его ставит
+  // prepareAudio, потому что в файле от MediaRecorder нет ни длительности, ни индекса позиций.
+  if (kind === 'chunk') await addAudioChunk(sessionId, url)
+  else await setAudioFullUrl(sessionId, url)
+
+  return Response.json({ ok: true })
+}
+```
+
+- [ ] **Step 3: Написать падающий тест смешивания потоков**
 
 `tests/recorder.test.ts`:
 
@@ -1481,12 +1613,12 @@ describe('mixStreams', () => {
 })
 ```
 
-- [ ] **Step 3: Запустить тест, убедиться что падает**
+- [ ] **Step 4: Запустить тест, убедиться что падает**
 
 Run: `npx vitest run tests/recorder.test.ts`
 Expected: FAIL — нет модуля `@/lib/recorder`
 
-- [ ] **Step 4: Реализовать запись**
+- [ ] **Step 5: Реализовать запись**
 
 `src/lib/recorder.ts`:
 
@@ -1494,6 +1626,7 @@ Expected: FAIL — нет модуля `@/lib/recorder`
 import { upload } from '@vercel/blob/client'
 
 const CHUNK_MS = 15_000
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 /** Микрофон и трек агента идут в один выход: писать только микрофон значит потерять голос агента. */
 export function mixStreams(ctx: AudioContext, streams: MediaStream[]): MediaStream {
@@ -1508,7 +1641,11 @@ function pickMimeType(): string | undefined {
 }
 
 export class InterviewRecorder {
-  private recorder: MediaRecorder | null = null
+  /** Пишет чанками: страховка от обрыва, ценой ненадёжной перемотки по склейке. */
+  private chunked: MediaRecorder | null = null
+  /** Пишет целиком: на stop() отдаёт завершённый файл, по которому перемотка работает. */
+  private whole: MediaRecorder | null = null
+  private wholeParts: Blob[] = []
   private ctx: AudioContext | null = null
   private index = 0
   private pending: Promise<unknown>[] = []
@@ -1519,48 +1656,89 @@ export class InterviewRecorder {
     return this.index
   }
 
-  async start(mic: MediaStream, remote: MediaStream) {
+  /** Возвращает момент старта записи по часам клиента — он нужен для калибровки таймингов. */
+  start(mic: MediaStream, remote: MediaStream): number {
     this.ctx = new AudioContext()
     const mixed = mixStreams(this.ctx, [mic, remote])
     const mimeType = pickMimeType()
-    this.recorder = new MediaRecorder(mixed, mimeType ? { mimeType } : undefined)
-    this.recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) this.pending.push(this.uploadChunk(e.data))
+    const options = mimeType ? { mimeType } : undefined
+
+    this.chunked = new MediaRecorder(mixed, options)
+    this.chunked.ondataavailable = (e) => {
+      if (e.data.size > 0) this.pending.push(this.put(e.data, 'chunk'))
     }
-    this.recorder.start(CHUNK_MS)
+
+    this.whole = new MediaRecorder(mixed, options)
+    this.whole.ondataavailable = (e) => {
+      if (e.data.size > 0) this.wholeParts.push(e.data)
+    }
+
+    const startedAt = performance.now()
+    this.chunked.start(CHUNK_MS)
+    this.whole.start()
+    return startedAt
   }
 
-  private async uploadChunk(data: Blob) {
-    const name = String(this.index++).padStart(4, '0')
+  private async put(data: Blob, kind: 'chunk' | 'full') {
+    if (data.size > MAX_UPLOAD_BYTES) {
+      console.error('recording too large to upload', kind, data.size)
+      return
+    }
+    const name = kind === 'full' ? 'full' : String(this.index++).padStart(4, '0')
     try {
-      await upload(`interviews/${this.sessionId}/${name}.webm`, data, {
+      const blob = await upload(`interviews/${this.sessionId}/${name}.webm`, data, {
         access: 'public',
         handleUploadUrl: '/api/blob-token',
         clientPayload: this.sessionId,
         contentType: data.type || 'audio/webm',
       })
+      // Регистрируем сами: вебхук onUploadCompleted не работает на localhost,
+      // а проверять аудио только на проде — плохой цикл разработки.
+      await fetch('/api/audio/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: this.sessionId, url: blob.url, kind }),
+        keepalive: true,
+      })
     } catch (err) {
-      // Потеря чанка не должна ронять интервью: разговор важнее записи.
-      console.error('chunk upload failed', name, err)
+      // Потеря записи не должна ронять интервью: разговор важнее файла.
+      console.error('audio upload failed', kind, name, err)
     }
   }
 
+  /** Дожидается загрузки завершённого файла: карточка играет именно его. */
   async stop() {
-    this.recorder?.stop()
+    const wholeDone = this.whole
+      ? new Promise<void>((resolve) => {
+          this.whole!.onstop = () => resolve()
+        })
+      : Promise.resolve()
+
+    this.chunked?.stop()
+    this.whole?.stop()
+    await wholeDone
+
+    if (this.wholeParts.length > 0) {
+      const type = this.wholeParts[0].type || 'audio/webm'
+      await this.put(new Blob(this.wholeParts, { type }), 'full')
+      this.wholeParts = []
+    }
+
     await Promise.allSettled(this.pending)
     await this.ctx?.close()
-    this.recorder = null
+    this.chunked = null
+    this.whole = null
     this.ctx = null
   }
 }
 ```
 
-- [ ] **Step 5: Запустить тест, убедиться что проходит**
+- [ ] **Step 6: Запустить тест, убедиться что проходит**
 
 Run: `npx vitest run tests/recorder.test.ts`
 Expected: PASS
 
-- [ ] **Step 6: Связать Blob-стор и задеплоить**
+- [ ] **Step 7: Связать Blob-стор и задеплоить**
 
 ```bash
 npx vercel@latest blob store add scoring-agent-audio
@@ -1568,11 +1746,11 @@ npx vercel@latest env pull .env.local
 npx vercel@latest --prod
 ```
 
-- [ ] **Step 7: Коммит**
+- [ ] **Step 8: Коммит**
 
 ```bash
 git add -A
-git commit -m "feat: запись смешанного потока и загрузка чанков в Blob"
+git commit -m "feat: запись двумя рекордерами и загрузка аудио в Blob"
 ```
 
 ---
@@ -1585,7 +1763,7 @@ git commit -m "feat: запись смешанного потока и загр�
 - Create: `tests/realtime-client.test.ts`
 
 **Interfaces:**
-- Consumes: `assembleTurns`, `StampedEvent` из `@/lib/turns`; `InterviewRecorder` из `@/lib/recorder`
+- Consumes: `assembleTurns`, `computeAudioOffset`, `StampedEvent` из `@/lib/turns`; `InterviewRecorder` из `@/lib/recorder`
 - Produces:
   - `connectRealtime(opts: { clientSecret: string; mic: MediaStream; onEvent: (e: Record<string, unknown>) => void; onRemoteStream: (s: MediaStream) => void }): Promise<{ pc: RTCPeerConnection; callId: string | null }>`
   - `useInterview()` → `{ phase, error, turns, start(candidateName), end(), sessionId }`, где `phase: 'idle'|'connecting'|'live'|'ending'|'done'|'error'`
@@ -1598,11 +1776,15 @@ git commit -m "feat: запись смешанного потока и загр�
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { connectRealtime } from '@/lib/realtime-client'
 
-let channel: { onmessage: ((e: MessageEvent) => void) | null }
+let channel: {
+  onmessage: ((e: MessageEvent) => void) | null
+  onopen: ((e: Event) => void) | null
+  send: ReturnType<typeof vi.fn>
+}
 let pcInstance: Record<string, unknown>
 
 beforeEach(() => {
-  channel = { onmessage: null }
+  channel = { onmessage: null, onopen: null, send: vi.fn() }
   pcInstance = {
     createDataChannel: vi.fn(() => channel),
     createOffer: vi.fn(async () => ({ type: 'offer', sdp: 'OFFER_SDP' })),
@@ -1638,6 +1820,12 @@ describe('connectRealtime', () => {
     await connectRealtime({ clientSecret: 'ek_1', mic, onEvent, onRemoteStream: vi.fn() })
     channel.onmessage?.({ data: JSON.stringify({ type: 'session.updated' }) } as MessageEvent)
     expect(onEvent).toHaveBeenCalledWith({ type: 'session.updated' })
+  })
+
+  it('просит агента заговорить первым, как только канал открылся', async () => {
+    await connectRealtime({ clientSecret: 'ek_1', mic, onEvent: vi.fn(), onRemoteStream: vi.fn() })
+    channel.onopen?.(new Event('open'))
+    expect(channel.send).toHaveBeenCalledWith(JSON.stringify({ type: 'response.create' }))
   })
 
   it('бросает понятную ошибку, когда handshake не удался', async () => {
@@ -1680,6 +1868,10 @@ export async function connectRealtime(opts: {
     }
   }
 
+  // Модель отвечает, когда кандидат замолчал. Без этого толчка при подключении
+  // никто не начинает говорить, и кандидат слушает тишину.
+  channel.onopen = () => channel.send(JSON.stringify({ type: 'response.create' }))
+
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
 
@@ -1701,7 +1893,7 @@ export async function connectRealtime(opts: {
 - [ ] **Step 4: Запустить тесты, убедиться что проходят**
 
 Run: `npx vitest run tests/realtime-client.test.ts`
-Expected: PASS, 3 теста
+Expected: PASS, 4 теста
 
 - [ ] **Step 5: Реализовать хук интервью**
 
@@ -1712,12 +1904,13 @@ Expected: PASS, 3 теста
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { connectRealtime } from '@/lib/realtime-client'
 import { InterviewRecorder } from '@/lib/recorder'
-import { assembleTurns, type StampedEvent } from '@/lib/turns'
+import { assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
 import type { Turn } from '@/lib/types'
 
 export type Phase = 'idle' | 'connecting' | 'live' | 'ending' | 'done' | 'error'
 
 const FLUSH_MS = 4000
+const MAX_INTERVIEW_MS = 15 * 60 * 1000
 
 export function useInterview() {
   const [phase, setPhase] = useState<Phase>('idle')
@@ -1729,41 +1922,65 @@ export function useInterview() {
   const pc = useRef<RTCPeerConnection | null>(null)
   const mic = useRef<MediaStream | null>(null)
   const recorder = useRef<InterviewRecorder | null>(null)
+  const recordingStartSec = useRef<number | null>(null)
   const startedAt = useRef(0)
   const flusher = useRef<ReturnType<typeof setInterval> | null>(null)
+  const deadline = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionRef = useRef<string | null>(null)
   const ended = useRef(false)
 
-  const persist = useCallback(async (done: boolean, status?: 'interrupted') => {
-    const id = sessionRef.current
-    if (!id) return
-    const body = JSON.stringify({ sessionId: id, turns: assembleTurns(events.current), done, status })
-    if (done && 'sendBeacon' in navigator) {
-      navigator.sendBeacon('/api/turns', new Blob([body], { type: 'application/json' }))
-      return
-    }
-    await fetch('/api/turns', { method: 'POST', body, headers: { 'Content-Type': 'application/json' } })
-  }, [])
+  const audioOffset = useCallback(
+    () => (recordingStartSec.current === null ? null : computeAudioOffset(events.current, recordingStartSec.current)),
+    [],
+  )
 
-  const end = useCallback(async (status?: 'interrupted') => {
-    if (ended.current) return
-    ended.current = true
-    setPhase('ending')
-    if (flusher.current) clearInterval(flusher.current)
-    pc.current?.close()
-    mic.current?.getTracks().forEach((t) => t.stop())
-    await recorder.current?.stop()
-    await persist(true, status)
-    const id = sessionRef.current
-    if (id && status !== 'interrupted') {
-      fetch('/api/analyze', {
+  const persist = useCallback(
+    async (done: boolean, status?: 'interrupted', viaBeacon = false) => {
+      const id = sessionRef.current
+      if (!id) return
+      const body = JSON.stringify({
+        sessionId: id,
+        turns: assembleTurns(events.current),
+        audioOffsetSec: audioOffset(),
+        done,
+        status,
+      })
+      // sendBeacon — только для закрывающейся вкладки: он не даёт дождаться ответа,
+      // а при обычном завершении нам нужно, чтобы сервер успел принять транскрипт
+      // до того, как он же запустит анализ.
+      if (viaBeacon && 'sendBeacon' in navigator) {
+        navigator.sendBeacon('/api/turns', new Blob([body], { type: 'application/json' }))
+        return
+      }
+      await fetch('/api/turns', {
         method: 'POST',
-        body: JSON.stringify({ sessionId: id }),
+        body,
         headers: { 'Content-Type': 'application/json' },
-      }).catch(() => {})
-    }
-    setPhase('done')
-  }, [persist])
+        keepalive: true,
+      })
+    },
+    [audioOffset],
+  )
+
+  const end = useCallback(
+    async (status?: 'interrupted') => {
+      if (ended.current) return
+      ended.current = true
+      setPhase('ending')
+
+      if (flusher.current) clearInterval(flusher.current)
+      if (deadline.current) clearTimeout(deadline.current)
+      pc.current?.close()
+      mic.current?.getTracks().forEach((t) => t.stop())
+
+      // Сначала дожидаемся загрузки записи, потом отдаём транскрипт: анализ на сервере
+      // запускается этим же запросом, и к моменту готовности карточки аудио уже на месте.
+      await recorder.current?.stop()
+      await persist(true, status)
+      setPhase('done')
+    },
+    [persist],
+  )
 
   const start = useCallback(
     async (candidateName: string) => {
@@ -1795,11 +2012,17 @@ export function useInterview() {
             setTurns(assembleTurns(events.current))
           },
           onRemoteStream: (remote) => {
+            // ontrack может сработать больше одного раза: второй рекордер на том же
+            // потоке нам не нужен.
+            if (recordingStartSec.current !== null) return
+
             const el = new Audio()
             el.autoplay = true
             el.srcObject = remote
             void el.play().catch(() => {})
-            void recorder.current?.start(stream, remote)
+
+            const startedRecordingAt = recorder.current!.start(stream, remote)
+            recordingStartSec.current = (startedRecordingAt - startedAt.current) / 1000
           },
         })
         pc.current = conn.pc
@@ -1811,6 +2034,8 @@ export function useInterview() {
         }
 
         flusher.current = setInterval(() => void persist(false), FLUSH_MS)
+        // Забытая открытая вкладка не должна жечь квоту: разговор всё равно закончится.
+        deadline.current = setTimeout(() => void end(), MAX_INTERVIEW_MS)
         setPhase('live')
       } catch (err) {
         setError((err as Error).message)
@@ -1822,7 +2047,7 @@ export function useInterview() {
 
   useEffect(() => {
     const onUnload = () => {
-      if (sessionRef.current && !ended.current) void persist(true, 'interrupted')
+      if (sessionRef.current && !ended.current) void persist(true, 'interrupted', true)
     }
     window.addEventListener('pagehide', onUnload)
     return () => window.removeEventListener('pagehide', onUnload)
@@ -3122,22 +3347,28 @@ git commit -m "feat: оркестрация анализа с валидацие
 
 ---
 
-### Task 16: Роут анализа и склейка аудио
+### Task 16: Запуск анализа и резервная склейка аудио
+
+`runAnalysis` — единственное место, где анализ запускается: его зовёт `/api/turns` при
+завершении разговора и роут `/api/analyze` при ручном повторе с карточки. Склейка чанков
+нужна только тем сессиям, что не дошли до конца и не получили завершённого файла.
 
 **Files:**
+- Modify: `src/lib/analyze/run.ts` (заглушка из задачи 8)
 - Create: `src/app/api/analyze/route.ts`
 - Create: `src/app/api/audio/stitch/route.ts`
-- Create: `tests/analyze-route.test.ts`
+- Create: `tests/analyze-run.test.ts`
 
 **Interfaces:**
 - Consumes: `buildCard` из `@/lib/analyze`; `getSession`, `saveAnalysis`, `setStatus`, `setAudioUrl` из `@/lib/db`
 - Produces:
-  - `POST /api/analyze` с телом `{ sessionId }` → `{ ok: true }`; идемпотентен
+  - `runAnalysis(sessionId: string): Promise<{ droppedClaims: number }>` — идемпотентна, сама проставляет статусы
+  - `POST /api/analyze` с телом `{ sessionId }` → `{ ok: true, droppedClaims }`
   - `POST /api/audio/stitch` с телом `{ sessionId }` → `{ audioUrl }`
 
-- [ ] **Step 1: Написать падающий тест роута анализа**
+- [ ] **Step 1: Написать падающий тест**
 
-`tests/analyze-route.test.ts`:
+`tests/analyze-run.test.ts`:
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -3145,113 +3376,109 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const getSession = vi.fn()
 const saveAnalysis = vi.fn(async () => {})
 const setStatus = vi.fn(async () => {})
-const buildCard = vi.fn(async () => ({ card: { droppedClaims: 0 }, metrics: { durationSec: 1 } }))
+const buildCard = vi.fn(async () => ({ card: { droppedClaims: 2 }, metrics: { durationSec: 1 } }))
 
 vi.mock('@/lib/db', () => ({ getSession, saveAnalysis, setStatus }))
 vi.mock('@/lib/analyze', () => ({ buildCard }))
 
-const post = async (body: unknown) => {
-  const { POST } = await import('@/app/api/analyze/route')
-  return POST(new Request('http://x/api/analyze', { method: 'POST', body: JSON.stringify(body) }))
+const session = {
+  id: 's1',
+  roleId: 'unimatch-default',
+  status: 'analyzing',
+  card: null,
+  transcript: [{ id: 'c1', speaker: 'candidate' }],
 }
-
-const session = { id: 's1', roleId: 'unimatch-default', status: 'analyzing', card: null, transcript: [{ id: 'c1', speaker: 'candidate' }] }
 
 beforeEach(() => {
   vi.clearAllMocks()
   getSession.mockResolvedValue(session)
 })
 
-describe('POST /api/analyze', () => {
+describe('runAnalysis', () => {
   it('анализирует и сохраняет карточку', async () => {
-    const res = await post({ sessionId: 's1' })
-    expect(res.status).toBe(200)
+    const { runAnalysis } = await import('@/lib/analyze/run')
+    await expect(runAnalysis('s1')).resolves.toEqual({ droppedClaims: 2 })
     expect(setStatus).toHaveBeenCalledWith('s1', 'analyzing')
     expect(saveAnalysis).toHaveBeenCalled()
   })
 
-  it('идемпотентен: повторный анализ перезаписывает результат', async () => {
+  it('перезапускается на уже проанализированной сессии, перезаписывая результат', async () => {
     getSession.mockResolvedValue({ ...session, status: 'analyzed', card: { droppedClaims: 0 } })
-    const res = await post({ sessionId: 's1' })
-    expect(res.status).toBe(200)
+    const { runAnalysis } = await import('@/lib/analyze/run')
+    await runAnalysis('s1')
     expect(buildCard).toHaveBeenCalledTimes(1)
+    expect(saveAnalysis).toHaveBeenCalled()
   })
 
-  it('404 на неизвестной сессии', async () => {
+  it('падает понятной ошибкой на неизвестной сессии', async () => {
     getSession.mockResolvedValue(null)
-    expect((await post({ sessionId: 'nope' })).status).toBe(404)
+    const { runAnalysis } = await import('@/lib/analyze/run')
+    await expect(runAnalysis('nope')).rejects.toThrow(/unknown session/i)
   })
 
-  it('ставит статус failed, когда анализ упал', async () => {
-    buildCard.mockRejectedValueOnce(new Error('model exploded') as never)
-    const res = await post({ sessionId: 's1' })
-    expect(res.status).toBe(500)
+  it('помечает failed и бросает, когда в разговоре нет речи кандидата', async () => {
+    getSession.mockResolvedValue({ ...session, transcript: [] })
+    const { runAnalysis } = await import('@/lib/analyze/run')
+    await expect(runAnalysis('s1')).rejects.toThrow(/candidate/i)
     expect(setStatus).toHaveBeenCalledWith('s1', 'failed')
   })
 
-  it('400 на разговоре без реплик кандидата', async () => {
-    getSession.mockResolvedValue({ ...session, transcript: [] })
-    expect((await post({ sessionId: 's1' })).status).toBe(400)
+  it('помечает failed, когда анализ упал', async () => {
+    buildCard.mockRejectedValueOnce(new Error('model exploded') as never)
+    const { runAnalysis } = await import('@/lib/analyze/run')
+    await expect(runAnalysis('s1')).rejects.toThrow(/model exploded/)
+    expect(setStatus).toHaveBeenCalledWith('s1', 'failed')
   })
 })
 ```
 
 - [ ] **Step 2: Запустить тест, убедиться что падает**
 
-Run: `npx vitest run tests/analyze-route.test.ts`
-Expected: FAIL — нет модуля роута
+Run: `npx vitest run tests/analyze-run.test.ts`
+Expected: FAIL — заглушка `runAnalysis` ничего не делает
 
-- [ ] **Step 3: Реализовать роут анализа**
+- [ ] **Step 3: Наполнить `runAnalysis`**
 
-`src/app/api/analyze/route.ts`:
+`src/lib/analyze/run.ts` (заменить заглушку из задачи 8 целиком):
 
 ```ts
 import { buildCard } from '@/lib/analyze'
 import { getSession, saveAnalysis, setStatus } from '@/lib/db'
 
-export const maxDuration = 120
-
-export async function POST(req: Request) {
-  let sessionId: string | undefined
-  try {
-    sessionId = (await req.json()).sessionId
-  } catch {
-    return Response.json({ error: 'Malformed request body' }, { status: 400 })
-  }
-  if (!sessionId) return Response.json({ error: 'sessionId is required' }, { status: 400 })
-
+/**
+ * Единственная точка запуска анализа: её зовут и автоматическое завершение интервью,
+ * и ручной повтор с карточки. Идемпотентна — повторный вызов перезаписывает результат.
+ */
+export async function runAnalysis(sessionId: string): Promise<{ droppedClaims: number }> {
   const session = await getSession(sessionId)
-  if (!session) return Response.json({ error: 'Unknown session' }, { status: 404 })
+  if (!session) throw new Error(`Unknown session: ${sessionId}`)
 
   if (!session.transcript.some((t) => t.speaker === 'candidate')) {
     await setStatus(sessionId, 'failed')
-    return Response.json({ error: 'This conversation has no candidate speech to analyse' }, { status: 400 })
+    throw new Error('No candidate speech in this conversation — nothing to analyse')
   }
 
   await setStatus(sessionId, 'analyzing')
   try {
     const { card, metrics } = await buildCard({ turns: session.transcript, roleId: session.roleId })
     await saveAnalysis(sessionId, metrics, card)
-    return Response.json({ ok: true, droppedClaims: card.droppedClaims })
+    return { droppedClaims: card.droppedClaims }
   } catch (err) {
-    console.error('analysis failed', sessionId, err)
     await setStatus(sessionId, 'failed')
-    return Response.json({ error: 'Analysis failed. You can retry it from the card.' }, { status: 500 })
+    throw err
   }
 }
 ```
 
-- [ ] **Step 4: Реализовать склейку аудио**
+- [ ] **Step 4: Реализовать роут повторного анализа**
 
-`src/app/api/audio/stitch/route.ts`:
+`src/app/api/analyze/route.ts`:
 
 ```ts
-import { put } from '@vercel/blob'
-import { getSession, setAudioUrl } from '@/lib/db'
+import { runAnalysis } from '@/lib/analyze/run'
 
-export const maxDuration = 120
+export const maxDuration = 300
 
-/** Чанки MediaRecorder не самостоятельные файлы: заголовок только в первом, склейка даёт валидный файл. */
 export async function POST(req: Request) {
   let sessionId: string | undefined
   try {
@@ -3261,52 +3488,190 @@ export async function POST(req: Request) {
   }
   if (!sessionId) return Response.json({ error: 'sessionId is required' }, { status: 400 })
 
-  const session = await getSession(sessionId)
-  if (!session) return Response.json({ error: 'Unknown session' }, { status: 404 })
-  if (session.audioUrl) return Response.json({ audioUrl: session.audioUrl })
-  if (session.audioChunks.length === 0) return Response.json({ error: 'No audio recorded' }, { status: 404 })
-
-  const ordered = [...session.audioChunks].sort()
-  const parts: ArrayBuffer[] = []
-  for (const url of ordered) {
-    const res = await fetch(url)
-    if (!res.ok) {
-      console.error('chunk fetch failed', url, res.status)
-      continue
-    }
-    parts.push(await res.arrayBuffer())
+  try {
+    const { droppedClaims } = await runAnalysis(sessionId)
+    return Response.json({ ok: true, droppedClaims })
+  } catch (err) {
+    const message = (err as Error).message
+    console.error('analysis failed', sessionId, err)
+    if (/^Unknown session/.test(message)) return Response.json({ error: message }, { status: 404 })
+    if (/nothing to analyse/.test(message)) return Response.json({ error: message }, { status: 400 })
+    return Response.json({ error: 'Analysis failed. You can retry it from the card.' }, { status: 500 })
   }
-  if (parts.length === 0) return Response.json({ error: 'No readable audio chunks' }, { status: 404 })
+}
+```
 
-  const blob = await put(`interviews/${sessionId}/full.webm`, new Blob(parts, { type: 'audio/webm' }), {
+- [ ] **Step 5: Реализовать подготовку записи к перемотке**
+
+`MediaRecorder` пишет поток, а не файл: в его выводе нет ни длительности, ни индекса
+позиций (Cues), ни SeekHead — поэтому перемотка по нему ненадёжна, а Safari может
+не проиграть его вовсе. Ремукс копированием пакетов, без перекодирования, дописывает
+всё три вещи. `mediabunny` умеет читать в том числе поток с неизвестными размерами
+блоков — именно такой отдаёт `MediaRecorder`, — поэтому один и тот же путь годится
+и для завершённого файла, и для склейки чанков прерванной сессии.
+
+`src/lib/audio/prepare.ts`:
+
+```ts
+import { put } from '@vercel/blob'
+import {
+  ALL_FORMATS,
+  BufferSource,
+  BufferTarget,
+  Conversion,
+  Input,
+  Output,
+  WebMOutputFormat,
+} from 'mediabunny'
+import { getSession, setAudioUrl } from '@/lib/db'
+
+async function fetchBytes(url: string): Promise<ArrayBuffer | null> {
+  const res = await fetch(url)
+  if (!res.ok) {
+    console.error('audio fetch failed', url, res.status)
+    return null
+  }
+  return res.arrayBuffer()
+}
+
+/**
+ * Собирает исходные байты записи: завершённый файл, если разговор дошёл до конца,
+ * иначе склейку чанков. Чанки названы номерами с ведущими нулями, поэтому
+ * лексикографический порядок совпадает с хронологическим, а заголовок лежит в первом —
+ * конкатенация по порядку даёт разбираемый поток.
+ */
+async function collectSource(session: {
+  audioFullUrl: string | null
+  audioChunks: string[]
+}): Promise<ArrayBuffer | null> {
+  if (session.audioFullUrl) {
+    const full = await fetchBytes(session.audioFullUrl)
+    if (full) return full
+  }
+  const parts: ArrayBuffer[] = []
+  for (const url of [...session.audioChunks].sort()) {
+    const part = await fetchBytes(url)
+    if (part) parts.push(part)
+  }
+  if (parts.length === 0) return null
+  return new Blob(parts).arrayBuffer()
+}
+
+/**
+ * Делает из записи перематываемый файл и ставит его как тот, что играет карточка.
+ * Идемпотентна: повторный вызов пересобирает файл и перезаписывает его.
+ */
+export async function prepareAudio(sessionId: string): Promise<{ audioUrl: string | null }> {
+  const session = await getSession(sessionId)
+  if (!session) throw new Error(`Unknown session: ${sessionId}`)
+
+  const source = await collectSource(session)
+  if (!source) return { audioUrl: null }
+
+  const input = new Input({ source: new BufferSource(source), formats: ALL_FORMATS })
+  const output = new Output({ format: new WebMOutputFormat(), target: new BufferTarget() })
+  try {
+    // Ни appendOnly, ни onProgress: первое отключило бы запись длительности и SeekHead,
+    // второе заставило бы лишний раз просканировать файл целиком.
+    const conversion = await Conversion.init({ input, output })
+    await conversion.execute()
+  } finally {
+    await input.dispose()
+  }
+
+  const buffer = output.target.buffer
+  if (!buffer) throw new Error('Remux produced no output')
+
+  const blob = await put(`interviews/${sessionId}/seekable.webm`, new Blob([buffer], { type: 'audio/webm' }), {
     access: 'public',
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: 'audio/webm',
   })
   await setAudioUrl(sessionId, blob.url)
-  return Response.json({ audioUrl: blob.url })
+  return { audioUrl: blob.url }
 }
 ```
 
-- [ ] **Step 5: Вызывать склейку при завершении интервью**
+- [ ] **Step 6: Вызывать подготовку записи перед анализом**
 
-В `src/hooks/useInterview.ts` в функции `end`, сразу после `persist(true, status)` и до вызова `/api/analyze`, добавить:
+В `src/app/api/turns/route.ts` заменить блок завершения на:
 
 ```ts
-      fetch('/api/audio/stitch', {
-        method: 'POST',
-        body: JSON.stringify({ sessionId: id }),
-        headers: { 'Content-Type': 'application/json' },
-      }).catch(() => {})
+  await finishSession(sessionId, payload.status === 'interrupted' ? 'interrupted' : 'analyzing')
+
+  // Аудио готовим до анализа: к моменту, когда карточка станет доступна, цитаты уже
+  // должны быть кликабельны. Обе операции идут в одном окне 300 секунд с запасом.
+  try {
+    await prepareAudio(sessionId)
+  } catch (err) {
+    // Без аудио карточка всё ещё полезна: цитаты останутся текстовыми.
+    console.error('audio prepare failed', sessionId, err)
+  }
+
+  try {
+    await runAnalysis(sessionId)
+  } catch (err) {
+    // Реплики уже сохранены, статус проставлен внутри runAnalysis. Ронять запрос нельзя:
+    // клиента может уже не быть, а транскрипт терять из-за упавшего анализа глупо.
+    console.error('analysis after interview failed', sessionId, err)
+  }
+  return Response.json({ saved: turns.length })
 ```
 
-Склейка вызывается и для прерванных сессий тоже — запись у них есть, просто короче. Поэтому вызов ставится **до** проверки `status !== 'interrupted'`.
+и добавить импорт `import { prepareAudio } from '@/lib/audio/prepare'`.
 
-- [ ] **Step 6: Запустить тесты, убедиться что проходят**
+- [ ] **Step 7: Добавить роут повторной подготовки записи**
 
-Run: `npm run test`
-Expected: PASS, все файлы
+Нужен, чтобы починить аудио на существующей сессии, не переигрывая интервью.
+
+`src/app/api/audio/prepare/route.ts`:
+
+```ts
+import { prepareAudio } from '@/lib/audio/prepare'
+
+export const maxDuration = 300
+
+export async function POST(req: Request) {
+  let sessionId: string | undefined
+  try {
+    sessionId = (await req.json()).sessionId
+  } catch {
+    return Response.json({ error: 'Malformed request body' }, { status: 400 })
+  }
+  if (!sessionId) return Response.json({ error: 'sessionId is required' }, { status: 400 })
+
+  try {
+    const { audioUrl } = await prepareAudio(sessionId)
+    if (!audioUrl) return Response.json({ error: 'No audio recorded for this session' }, { status: 404 })
+    return Response.json({ audioUrl })
+  } catch (err) {
+    const message = (err as Error).message
+    console.error('audio prepare failed', sessionId, err)
+    if (/^Unknown session/.test(message)) return Response.json({ error: message }, { status: 404 })
+    return Response.json({ error: 'Could not prepare the recording.' }, { status: 500 })
+  }
+}
+```
+
+- [ ] **Step 8: Проверить перемотку на живой записи**
+
+Пройти короткое интервью на задеплоенном демо, затем:
+
+```bash
+curl -s -X POST https://<deployment-url>/api/audio/prepare \
+  -H 'Content-Type: application/json' -d '{"sessionId":"<id>"}'
+```
+
+Открыть карточку и проверить главное: у плеера полной записи **видна длительность**
+(а не «бесконечность» или пусто), и клик по цитате играет именно те слова, что в ней
+написаны. Если слова не те — врёт калибровка `audio_offset_sec`, а не ремукс:
+сверить её значение с транскриптом.
+
+- [ ] **Step 6: Запустить все тесты**
+
+Run: `npm run test && npx tsc --noEmit`
+Expected: всё зелёное
 
 - [ ] **Step 7: Прогнать целиком на проде**
 
@@ -3314,13 +3679,14 @@ Expected: PASS, все файлы
 npx vercel@latest --prod
 ```
 
-Пройти интервью на боевом URL до конца. Проверить в базе: `status = 'analyzed'`, `card` не пустой, `audio_url` заполнен.
+Пройти интервью на боевом URL до конца. Проверить в базе: `status = 'analyzed'`,
+`card` не пустой, `audio_url` указывает на `full.webm`, `audio_offset_sec` заполнен.
 
 - [ ] **Step 8: Коммит**
 
 ```bash
 git add -A
-git commit -m "feat: роут анализа и склейка аудио-чанков"
+git commit -m "feat: единая точка запуска анализа и резервная склейка аудио"
 ```
 
 ---
@@ -3346,34 +3712,44 @@ git commit -m "feat: роут анализа и склейка аудио-чан
 import { useRef, useState } from 'react'
 import type { Evidence, Turn } from '@/lib/types'
 
+// prefix_padding_ms уже включён в audio_start_ms, поэтому подушка небольшая — только
+// сгладить границы определения речи.
 const PAD = 0.4
 
 export function EvidenceQuote({
   evidence,
   turns,
   audioUrl,
+  audioOffsetSec,
 }: {
   evidence: Evidence
   turns: Turn[]
   audioUrl: string | null
+  audioOffsetSec: number | null
 }) {
   const [playing, setPlaying] = useState(false)
   const audio = useRef<HTMLAudioElement | null>(null)
   const turn = turns.find((t) => t.id === evidence.turnId)
 
+  // Тайминги реплик живут в шкале аудио сессии OpenAI, а файл начался позже или раньше:
+  // без этой поправки фрагмент играет не те слова.
+  const offset = audioOffsetSec ?? 0
+  const from = turn ? Math.max(0, turn.tStart - offset - PAD) : 0
+  const to = turn ? turn.tEnd - offset + PAD : 0
+  const playable = !!audioUrl && !!turn && to > from
+
   function play() {
-    if (!audioUrl || !turn) return
-    if (!audio.current) audio.current = new Audio(audioUrl)
+    if (!playable) return
+    if (!audio.current) audio.current = new Audio(audioUrl!)
     const el = audio.current
-    const stopAt = turn.tEnd + PAD
     const onTime = () => {
-      if (el.currentTime >= stopAt) {
+      if (el.currentTime >= to) {
         el.pause()
         el.removeEventListener('timeupdate', onTime)
         setPlaying(false)
       }
     }
-    el.currentTime = Math.max(0, turn.tStart - PAD)
+    el.currentTime = from
     el.addEventListener('timeupdate', onTime)
     el.play().then(() => setPlaying(true)).catch(() => setPlaying(false))
   }
@@ -3381,14 +3757,14 @@ export function EvidenceQuote({
   return (
     <button
       onClick={play}
-      disabled={!audioUrl || !turn}
-      title={audioUrl ? 'Прослушать этот фрагмент' : 'Запись недоступна'}
+      disabled={!playable}
+      title={playable ? 'Прослушать этот фрагмент' : 'Запись этого фрагмента недоступна'}
       className="group block w-full rounded border-l-2 border-neutral-300 bg-neutral-50 px-3 py-2 text-left text-sm hover:border-black disabled:cursor-default disabled:opacity-60"
     >
       <span className="italic">«{evidence.quote}»</span>
       {turn && (
         <span className="ml-2 whitespace-nowrap text-xs text-neutral-500">
-          {playing ? '▶ играет' : `${turn.tStart.toFixed(1)}с`}
+          {playing ? '▶ играет' : `${Math.max(0, turn.tStart - offset).toFixed(1)}с`}
         </span>
       )}
     </button>
@@ -3401,16 +3777,22 @@ export function EvidenceQuote({
 `src/components/card/CardSections.tsx`:
 
 ```tsx
-import type { Card, Evidence, Turn } from '@/lib/types'
+import { isInsufficient, type Card, type Evidence, type Turn } from '@/lib/types'
 import { EvidenceQuote } from './EvidenceQuote'
 
-type Ctx = { turns: Turn[]; audioUrl: string | null }
+type Ctx = { turns: Turn[]; audioUrl: string | null; audioOffsetSec: number | null }
 
 function Quotes({ evidence, ctx }: { evidence: Evidence[]; ctx: Ctx }) {
   return (
     <div className="mt-2 space-y-1.5">
       {evidence.map((e, i) => (
-        <EvidenceQuote key={i} evidence={e} turns={ctx.turns} audioUrl={ctx.audioUrl} />
+        <EvidenceQuote
+          key={i}
+          evidence={e}
+          turns={ctx.turns}
+          audioUrl={ctx.audioUrl}
+          audioOffsetSec={ctx.audioOffsetSec}
+        />
       ))}
     </div>
   )
@@ -3504,13 +3886,29 @@ export function StructureBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
 
 const SUBSCORE: Record<string, string> = { grammar: 'Грамматика', vocabulary: 'Словарь', coherence: 'Связность' }
 
+function InsufficientBlock({ title, reason }: { title: string; reason: string }) {
+  return (
+    <Block title={title} subtitle="Недостаточно данных для обоснованной оценки">
+      <p className="text-sm text-neutral-600">{reason}</p>
+      <p className="text-xs text-neutral-500">
+        Оценку по такому объёму речи мы не выдаём: она была бы ничем не подкреплена, а это
+        именно то, от чего уходит этот инструмент.
+      </p>
+    </Block>
+  )
+}
+
 export function LanguageBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
+  if (isInsufficient(card.language)) {
+    return <InsufficientBlock title="Уровень английского" reason={card.language.reason} />
+  }
+  const language = card.language
   return (
     <Block
-      title={`Уровень английского: ${card.language.rangeLow}–${card.language.rangeHigh}`}
-      subtitle={card.language.summary}
+      title={`Уровень английского: ${language.rangeLow}–${language.rangeHigh}`}
+      subtitle={language.summary}
     >
-      {card.language.subscores.map((s) => (
+      {language.subscores.map((s) => (
         <div key={s.name}>
           <div className="text-sm">
             <span className="font-medium">{SUBSCORE[s.name] ?? s.name}</span>
@@ -3530,12 +3928,16 @@ export function LanguageBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
 const CONFIDENCE: Record<string, string> = { low: 'слабый сигнал', medium: 'средний сигнал', high: 'сильный сигнал' }
 
 export function DeliveryBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
+  if (isInsufficient(card.delivery)) {
+    return <InsufficientBlock title="Как говорит" reason={card.delivery.reason} />
+  }
+  const delivery = card.delivery
   return (
-    <Block title="Как говорит" subtitle={card.delivery.summary}>
-      {card.delivery.signals.length === 0 && (
+    <Block title="Как говорит" subtitle={delivery.summary}>
+      {delivery.signals.length === 0 && (
         <p className="text-sm text-neutral-600">Сигналов, требующих внимания, не найдено.</p>
       )}
-      {card.delivery.signals.map((s, i) => (
+      {delivery.signals.map((s, i) => (
         <div key={i}>
           <div className="text-sm">
             <span className="font-medium">{s.label}</span>
@@ -3588,13 +3990,20 @@ const STATUS: Record<string, string> = {
   failed: 'Анализ не удался',
 }
 
+// Карточка перестраивается после повторного анализа, поэтому кеш здесь только мешает.
+export const dynamic = 'force-dynamic'
+
 export default async function CardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getSession(id)
   if (!session) notFound()
 
   const minutes = session.metrics ? Math.round(session.metrics.durationSec / 60) : null
-  const ctx = { turns: session.transcript, audioUrl: session.audioUrl }
+  const ctx = {
+    turns: session.transcript,
+    audioUrl: session.audioUrl,
+    audioOffsetSec: session.audioOffsetSec,
+  }
 
   return (
     <main className="mx-auto max-w-3xl space-y-5 p-6">
@@ -3619,7 +4028,9 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
               ? 'Анализ упал. Данные разговора сохранены — можно попробовать снова.'
               : 'Карточка ещё не готова.'}
           </p>
-          <RetryAnalysis sessionId={session.id} />
+          {/* Сетка безопасности: обычно анализ уже отработал на сервере при завершении
+              разговора. Если по какой-то причине карточки нет, запускаем сами. */}
+          <RetryAnalysis sessionId={session.id} auto={session.status !== 'failed'} />
         </section>
       ) : (
         <>
@@ -3663,28 +4074,51 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
 
 ```tsx
 'use client'
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-export function RetryAnalysis({ sessionId }: { sessionId: string }) {
+export function RetryAnalysis({ sessionId, auto = false }: { sessionId: string; auto?: boolean }) {
   const [state, setState] = useState<'idle' | 'running' | 'failed'>('idle')
+  const [message, setMessage] = useState<string | null>(null)
+  const fired = useRef(false)
 
-  async function run() {
+  const run = useCallback(async () => {
     setState('running')
-    const res = await fetch('/api/analyze', {
-      method: 'POST',
-      body: JSON.stringify({ sessionId }),
-      headers: { 'Content-Type': 'application/json' },
-    })
-    if (res.ok) location.reload()
-    else setState('failed')
-  }
+    setMessage(null)
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (res.ok) {
+        location.reload()
+        return
+      }
+      const body = await res.json().catch(() => ({}))
+      setMessage(body.error ?? 'Не получилось.')
+      setState('failed')
+    } catch {
+      setMessage('Сеть не отвечает.')
+      setState('failed')
+    }
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!auto || fired.current) return
+    fired.current = true
+    void run()
+  }, [auto, run])
 
   return (
     <div className="mt-4">
-      <button onClick={run} disabled={state === 'running'} className="rounded bg-black px-4 py-2 text-sm text-white disabled:opacity-50">
+      <button
+        onClick={run}
+        disabled={state === 'running'}
+        className="rounded bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
+      >
         {state === 'running' ? 'Анализирую…' : 'Повторить анализ'}
       </button>
-      {state === 'failed' && <p className="mt-2 text-sm text-red-700">Снова не получилось. Загляни в логи Vercel.</p>}
+      {state === 'failed' && <p className="mt-2 text-sm text-red-700">{message}</p>}
     </div>
   )
 }
