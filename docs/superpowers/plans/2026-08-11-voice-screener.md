@@ -33,6 +33,11 @@
   - файлы, читаемые через `fs` из `process.cwd()`, могут не попасть в бандл; поэтому конфиг роли подключается **статическим импортом**, а не чтением с диска
   - `onUploadCompleted` у Blob **не срабатывает на localhost** — URL загруженного файла регистрирует сам клиент отдельным запросом
   - `put()` с существующим `pathname` по умолчанию **падает**; для перезаписи нужен `allowOverwrite: true`
+- **Воспроизведение аудио, точные значения** (проверено 11.08.2026):
+  - `MediaRecorder` не пишет индекс позиций (Cues) **никогда**, а длительность — только для незанкованных записей в Chrome 140+; поэтому запись проходит ремукс на сервере
+  - `<audio>.currentTime` при промахе по доступному диапазону **молча прыгает на ближайшую позицию** и сообщает об успехе — поэтому фрагменты цитат играются через Web Audio, а не перемоткой
+  - склейка чанков одной записи проигрывается по нормативной гарантии W3C; чанки **разных** записей — нет, поэтому рекордер один на сессию
+  - `audio/webm;codecs=opus` — единственный тип, поддерживаемый всеми браузерами; по умолчанию его не ставит никто, кроме Chrome
 - **Realtime API, точные значения** (проверено 11.08.2026):
   - эфемерный ключ: `POST https://api.openai.com/v1/realtime/client_secrets`, тело `{ session: {...}, expires_after: { anchor: 'created_at', seconds: 120 } }`, берём `.value`
   - SDP: `POST https://api.openai.com/v1/realtime/calls`, `Content-Type: application/sdp`, `Authorization: Bearer ek_...`, ответ — сырой SDP-текст, **без** `?model=`
@@ -64,14 +69,17 @@
 | `src/app/api/session/route.ts` | Эфемерный ключ + создание строки сессии |
 | `src/app/api/turns/route.ts` | Инкрементальная запись реплик |
 | `src/app/api/blob-token/route.ts` | Токен клиентской загрузки в Blob |
-| `src/app/api/audio/stitch/route.ts` | Склейка чанков в один файл |
-| `src/app/api/analyze/route.ts` | Запуск анализа, идемпотентно |
+| `src/app/api/audio/register/route.ts` | Регистрация загруженного чанка |
+| `src/lib/audio/prepare.ts` | Склейка чанков и ремукс в перематываемый файл |
+| `src/lib/analyze/run.ts` | Единственная точка запуска анализа |
+| `src/app/api/analyze/route.ts` | Повторный анализ с карточки |
 | `src/app/api/sessions/route.ts` | Список сессий для дашборда |
 | `src/app/probe/page.tsx` | Одноразовая страница проверки таймингов (задача 2) |
 | `src/app/interview/page.tsx` | Кандидатский флоу: согласие → микрофон → разговор → спасибо |
 | `src/components/interview/*` | Экраны кандидатского флоу |
 | `src/app/card/[id]/page.tsx` | Карточка рекрутера |
-| `src/components/card/EvidenceQuote.tsx` | Цитата с воспроизведением фрагмента |
+| `src/components/card/QuoteAudioProvider.tsx` | Одна загрузка и расшифровка записи на карточку, воспроизведение точных диапазонов |
+| `src/components/card/EvidenceQuote.tsx` | Цитата-кнопка, играющая свой фрагмент |
 | `src/components/card/*` | Блоки карточки |
 | `src/app/dashboard/page.tsx` | Список сессий |
 
@@ -507,10 +515,8 @@ export type SessionRecord = {
   transcript: Turn[]
   metrics: Metrics | null
   card: Card | null
-  /** Сырые чанки: страховка от обрыва. */
+  /** Сырые чанки записи по порядку. */
   audioChunks: string[]
-  /** Сырой завершённый файл рекордера, если разговор дошёл до конца. */
-  audioFullUrl: string | null
   /** Перематываемый файл после ремукса — именно его играет карточка. */
   audioUrl: string | null
   /** Какой секунде серверной шкалы соответствует нулевая секунда файла записи. */
@@ -549,7 +555,6 @@ git commit -m "feat: типы домена"
   - `finishSession(id: string, status: SessionStatus): Promise<void>`
   - `setStatus(id: string, status: SessionStatus): Promise<void>`
   - `addAudioChunk(id: string, url: string): Promise<void>`
-  - `setAudioFullUrl(id: string, url: string): Promise<void>` — сырой завершённый файл рекордера
   - `setAudioUrl(id: string, url: string): Promise<void>` — перематываемый файл после ремукса
   - `saveAnalysis(id: string, metrics: Metrics, card: Card): Promise<void>`
   - `countSessionsSince(since: Date): Promise<number>` — для мягкого лимита на прогоны
@@ -576,7 +581,6 @@ await sql`
     metrics        jsonb,
     card           jsonb,
     audio_chunks   jsonb       NOT NULL DEFAULT '[]'::jsonb,
-    audio_full_url text,
     audio_url      text,
     audio_offset_sec double precision
   )
@@ -617,7 +621,6 @@ type Row = {
   metrics: Metrics | null
   card: Card | null
   audio_chunks: string[]
-  audio_full_url: string | null
   audio_url: string | null
   audio_offset_sec: number | null
 }
@@ -635,7 +638,6 @@ function toRecord(row: Row): SessionRecord {
     metrics: row.metrics,
     card: row.card,
     audioChunks: row.audio_chunks ?? [],
-    audioFullUrl: row.audio_full_url,
     audioUrl: row.audio_url,
     audioOffsetSec: row.audio_offset_sec,
   }
@@ -692,10 +694,6 @@ export async function addAudioChunk(id: string, url: string) {
     UPDATE sessions SET audio_chunks = audio_chunks || ${JSON.stringify([url])}::jsonb
     WHERE id = ${id}
   `
-}
-
-export async function setAudioFullUrl(id: string, url: string) {
-  await sql`UPDATE sessions SET audio_full_url = ${url} WHERE id = ${id}`
 }
 
 /** Ставится только после ремукса: карточка играет перематываемый файл. */
@@ -1479,13 +1477,14 @@ git commit -m "feat: роут записи реплик, запускающий 
 
 ---
 
-### Task 9: Запись аудио двумя рекордерами
+### Task 9: Запись аудио и загрузка чанков
 
-От записи нужны две несовместимые вещи, поэтому рекордера два. Чанки дают устойчивость
-к обрыву, но их склейка не содержит ни длительности, ни индекса позиций — перемотка на
-конкретную секунду по ней ненадёжна. Завершённый `stop()`-ом файл перематывается, но
-существует только если разговор дошёл до конца. Пишем оба: первый — страховка, второй —
-то, что играет карточка.
+Один рекордер с `timeslice`. Спецификация W3C гарантирует, что склейка всех чанков одной
+записи проигрывается («the combination of all the Blobs from a completed recording MUST be
+playable»), а недостающий индекс позиций дописывает ремукс в задаче 16. Второй рекордер
+для «завершённого» файла не нужен: Chrome пишет длительность только для незанкованных
+записей, а индекс позиций не пишет никогда — то есть завершённый файл всё равно требовал
+бы ремукса.
 
 **Files:**
 - Create: `src/app/api/blob-token/route.ts`
@@ -1494,10 +1493,10 @@ git commit -m "feat: роут записи реплик, запускающий 
 - Create: `tests/recorder.test.ts`
 
 **Interfaces:**
-- Consumes: `addAudioChunk`, `getSession`, `setAudioUrl` из `@/lib/db`
+- Consumes: `addAudioChunk`, `getSession` из `@/lib/db`
 - Produces:
   - `POST /api/blob-token` — обработчик клиентской загрузки `@vercel/blob/client`
-  - `POST /api/audio/register` с телом `{ sessionId, url, kind: 'chunk' | 'full' }` → `{ ok: true }`
+  - `POST /api/audio/register` с телом `{ sessionId, url }` → `{ ok: true }`
   - `mixStreams(ctx: AudioContext, streams: MediaStream[]): MediaStream`
   - `class InterviewRecorder { constructor(sessionId: string); start(mic: MediaStream, remote: MediaStream): number; stop(): Promise<void>; get chunkCount(): number }` — `start` возвращает `performance.now()` момента старта записи, он нужен для калибровки таймингов
 
@@ -1540,26 +1539,25 @@ export async function POST(req: Request) {
 }
 ```
 
-- [ ] **Step 2: Реализовать роут регистрации загруженного аудио**
+- [ ] **Step 2: Реализовать роут регистрации загруженного чанка**
 
 `src/app/api/audio/register/route.ts`:
 
 ```ts
-import { addAudioChunk, getSession, setAudioFullUrl } from '@/lib/db'
+import { addAudioChunk, getSession } from '@/lib/db'
 
 const BLOB_HOST_SUFFIX = '.public.blob.vercel-storage.com'
 
 export async function POST(req: Request) {
-  let payload: { sessionId?: string; url?: string; kind?: string }
+  let payload: { sessionId?: string; url?: string }
   try {
     payload = await req.json()
   } catch {
     return Response.json({ error: 'Malformed request body' }, { status: 400 })
   }
 
-  const { sessionId, url, kind } = payload
+  const { sessionId, url } = payload
   if (!sessionId || !url) return Response.json({ error: 'sessionId and url are required' }, { status: 400 })
-  if (kind !== 'chunk' && kind !== 'full') return Response.json({ error: 'kind must be chunk or full' }, { status: 400 })
 
   // Роут открытый, поэтому принимаем только адреса своего же хранилища и только
   // те, что лежат в папке этой сессии.
@@ -1575,11 +1573,7 @@ export async function POST(req: Request) {
 
   if (!(await getSession(sessionId))) return Response.json({ error: 'Unknown session' }, { status: 404 })
 
-  // Сырой файл только регистрируется. Карточка играет результат ремукса — его ставит
-  // prepareAudio, потому что в файле от MediaRecorder нет ни длительности, ни индекса позиций.
-  if (kind === 'chunk') await addAudioChunk(sessionId, url)
-  else await setAudioFullUrl(sessionId, url)
-
+  await addAudioChunk(sessionId, url)
   return Response.json({ ok: true })
 }
 ```
@@ -1635,17 +1629,17 @@ export function mixStreams(ctx: AudioContext, streams: MediaStream[]): MediaStre
   return destination.stream
 }
 
+/**
+ * Единственная строка типа, работающая во всех браузерах. По умолчанию её не ставит
+ * никто, кроме Chrome: Firefox отдаёт ogg, Safari — mp4, поэтому задаём явно.
+ */
 function pickMimeType(): string | undefined {
   const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
   return candidates.find((t) => MediaRecorder.isTypeSupported(t))
 }
 
 export class InterviewRecorder {
-  /** Пишет чанками: страховка от обрыва, ценой ненадёжной перемотки по склейке. */
-  private chunked: MediaRecorder | null = null
-  /** Пишет целиком: на stop() отдаёт завершённый файл, по которому перемотка работает. */
-  private whole: MediaRecorder | null = null
-  private wholeParts: Blob[] = []
+  private recorder: MediaRecorder | null = null
   private ctx: AudioContext | null = null
   private index = 0
   private pending: Promise<unknown>[] = []
@@ -1661,30 +1655,21 @@ export class InterviewRecorder {
     this.ctx = new AudioContext()
     const mixed = mixStreams(this.ctx, [mic, remote])
     const mimeType = pickMimeType()
-    const options = mimeType ? { mimeType } : undefined
-
-    this.chunked = new MediaRecorder(mixed, options)
-    this.chunked.ondataavailable = (e) => {
-      if (e.data.size > 0) this.pending.push(this.put(e.data, 'chunk'))
+    this.recorder = new MediaRecorder(mixed, mimeType ? { mimeType } : undefined)
+    this.recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) this.pending.push(this.put(e.data))
     }
-
-    this.whole = new MediaRecorder(mixed, options)
-    this.whole.ondataavailable = (e) => {
-      if (e.data.size > 0) this.wholeParts.push(e.data)
-    }
-
     const startedAt = performance.now()
-    this.chunked.start(CHUNK_MS)
-    this.whole.start()
+    this.recorder.start(CHUNK_MS)
     return startedAt
   }
 
-  private async put(data: Blob, kind: 'chunk' | 'full') {
+  private async put(data: Blob) {
     if (data.size > MAX_UPLOAD_BYTES) {
-      console.error('recording too large to upload', kind, data.size)
+      console.error('recording chunk too large to upload', data.size)
       return
     }
-    const name = kind === 'full' ? 'full' : String(this.index++).padStart(4, '0')
+    const name = String(this.index++).padStart(4, '0')
     try {
       const blob = await upload(`interviews/${this.sessionId}/${name}.webm`, data, {
         access: 'public',
@@ -1697,37 +1682,20 @@ export class InterviewRecorder {
       await fetch('/api/audio/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: this.sessionId, url: blob.url, kind }),
+        body: JSON.stringify({ sessionId: this.sessionId, url: blob.url }),
         keepalive: true,
       })
     } catch (err) {
-      // Потеря записи не должна ронять интервью: разговор важнее файла.
-      console.error('audio upload failed', kind, name, err)
+      // Потеря чанка не должна ронять интервью: разговор важнее записи.
+      console.error('audio chunk upload failed', name, err)
     }
   }
 
-  /** Дожидается загрузки завершённого файла: карточка играет именно его. */
   async stop() {
-    const wholeDone = this.whole
-      ? new Promise<void>((resolve) => {
-          this.whole!.onstop = () => resolve()
-        })
-      : Promise.resolve()
-
-    this.chunked?.stop()
-    this.whole?.stop()
-    await wholeDone
-
-    if (this.wholeParts.length > 0) {
-      const type = this.wholeParts[0].type || 'audio/webm'
-      await this.put(new Blob(this.wholeParts, { type }), 'full')
-      this.wholeParts = []
-    }
-
+    this.recorder?.stop()
     await Promise.allSettled(this.pending)
     await this.ctx?.close()
-    this.chunked = null
-    this.whole = null
+    this.recorder = null
     this.ctx = null
   }
 }
@@ -1750,7 +1718,7 @@ npx vercel@latest --prod
 
 ```bash
 git add -A
-git commit -m "feat: запись двумя рекордерами и загрузка аудио в Blob"
+git commit -m "feat: запись разговора чанками и загрузка в Blob"
 ```
 
 ---
@@ -3535,19 +3503,11 @@ async function fetchBytes(url: string): Promise<ArrayBuffer | null> {
 }
 
 /**
- * Собирает исходные байты записи: завершённый файл, если разговор дошёл до конца,
- * иначе склейку чанков. Чанки названы номерами с ведущими нулями, поэтому
- * лексикографический порядок совпадает с хронологическим, а заголовок лежит в первом —
- * конкатенация по порядку даёт разбираемый поток.
+ * Склеивает чанки в один поток. Чанки названы номерами с ведущими нулями, поэтому
+ * лексикографический порядок совпадает с хронологическим; заголовок лежит в первом,
+ * остальные — продолжение того же потока, и конкатенация по порядку даёт разбираемый файл.
  */
-async function collectSource(session: {
-  audioFullUrl: string | null
-  audioChunks: string[]
-}): Promise<ArrayBuffer | null> {
-  if (session.audioFullUrl) {
-    const full = await fetchBytes(session.audioFullUrl)
-    if (full) return full
-  }
+async function collectSource(session: { audioChunks: string[] }): Promise<ArrayBuffer | null> {
   const parts: ArrayBuffer[] = []
   for (const url of [...session.audioChunks].sort()) {
     const part = await fetchBytes(url)
@@ -3694,6 +3654,7 @@ git commit -m "feat: единая точка запуска анализа и р
 ### Task 17: Карточка рекрутера
 
 **Files:**
+- Create: `src/components/card/QuoteAudioProvider.tsx`
 - Create: `src/components/card/EvidenceQuote.tsx`
 - Create: `src/components/card/CardSections.tsx`
 - Create: `src/app/card/[id]/page.tsx`
@@ -3703,7 +3664,106 @@ git commit -m "feat: единая точка запуска анализа и р
 - Consumes: `getSession`, `listSessions` из `@/lib/db`; типы карточки из `@/lib/types`
 - Produces: `/card/[id]` на русском с кликабельными цитатами; `GET /api/sessions` → список сессий
 
-- [ ] **Step 1: Реализовать цитату с воспроизведением фрагмента**
+- [ ] **Step 1: Реализовать воспроизведение точных фрагментов через Web Audio**
+
+Почему не `<audio>.currentTime`: по стандарту HTML, если запрошенная позиция не попадает
+в доступный для перемотки диапазон, браузер **молча переходит на ближайшую** и сообщает
+об успехе. На странице, которая существует ради доказательств, это худший из возможных
+сбоев — цитата играет не те слова, и ни одной ошибки в консоли. Web Audio играет
+диапазон по семплам и от индексов контейнера не зависит вовсе.
+
+`src/components/card/QuoteAudioProvider.tsx`:
+
+```tsx
+'use client'
+import { createContext, useCallback, useContext, useRef, useState } from 'react'
+
+type State = 'idle' | 'loading' | 'ready' | 'failed'
+
+type QuoteAudio = {
+  state: State
+  /** Играет диапазон записи в секундах. Возвращает функцию остановки. */
+  play: (fromSec: number, toSec: number) => Promise<() => void>
+  available: boolean
+}
+
+const QuoteAudioContext = createContext<QuoteAudio | null>(null)
+
+// Речи 16 кГц хватает с избытком, а памяти на десятиминутную запись уходит втрое меньше,
+// чем на 48 кГц: 38 МБ вместо 115.
+const SPEECH_SAMPLE_RATE = 16_000
+
+export function QuoteAudioProvider({
+  audioUrl,
+  children,
+}: {
+  audioUrl: string | null
+  children: React.ReactNode
+}) {
+  const [state, setState] = useState<State>('idle')
+  const ctxRef = useRef<AudioContext | null>(null)
+  const bufferRef = useRef<Promise<AudioBuffer> | null>(null)
+
+  const load = useCallback(async () => {
+    if (!audioUrl) throw new Error('no recording')
+    if (!ctxRef.current) {
+      try {
+        ctxRef.current = new AudioContext({ sampleRate: SPEECH_SAMPLE_RATE })
+      } catch {
+        // Не всякий браузер принимает произвольную частоту — тогда берём его собственную.
+        ctxRef.current = new AudioContext()
+      }
+    }
+    if (!bufferRef.current) {
+      setState('loading')
+      bufferRef.current = fetch(audioUrl)
+        .then((res) => {
+          if (!res.ok) throw new Error(`recording fetch failed: ${res.status}`)
+          return res.arrayBuffer()
+        })
+        .then((bytes) => ctxRef.current!.decodeAudioData(bytes))
+        .then((buffer) => {
+          setState('ready')
+          return buffer
+        })
+        .catch((err) => {
+          setState('failed')
+          bufferRef.current = null
+          throw err
+        })
+    }
+    return bufferRef.current
+  }, [audioUrl])
+
+  const play = useCallback(
+    async (fromSec: number, toSec: number) => {
+      const buffer = await load()
+      const ctx = ctxRef.current!
+      await ctx.resume()
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      source.connect(ctx.destination)
+      const from = Math.max(0, Math.min(fromSec, buffer.duration))
+      const duration = Math.max(0, Math.min(toSec, buffer.duration) - from)
+      source.start(0, from, duration)
+      return () => source.stop()
+    },
+    [load],
+  )
+
+  return (
+    <QuoteAudioContext.Provider value={{ state, play, available: !!audioUrl }}>
+      {children}
+    </QuoteAudioContext.Provider>
+  )
+}
+
+export function useQuoteAudio() {
+  const ctx = useContext(QuoteAudioContext)
+  if (!ctx) throw new Error('useQuoteAudio must be used inside QuoteAudioProvider')
+  return ctx
+}
+```
 
 `src/components/card/EvidenceQuote.tsx`:
 
@@ -3711,24 +3771,24 @@ git commit -m "feat: единая точка запуска анализа и р
 'use client'
 import { useRef, useState } from 'react'
 import type { Evidence, Turn } from '@/lib/types'
+import { useQuoteAudio } from './QuoteAudioProvider'
 
-// prefix_padding_ms уже включён в audio_start_ms, поэтому подушка небольшая — только
-// сгладить границы определения речи.
+// Подушка по краям сглаживает границы определения речи. prefix_padding_ms уже включён
+// в серверный audio_start_ms, поэтому она небольшая.
 const PAD = 0.4
 
 export function EvidenceQuote({
   evidence,
   turns,
-  audioUrl,
   audioOffsetSec,
 }: {
   evidence: Evidence
   turns: Turn[]
-  audioUrl: string | null
   audioOffsetSec: number | null
 }) {
+  const { play, available, state } = useQuoteAudio()
   const [playing, setPlaying] = useState(false)
-  const audio = useRef<HTMLAudioElement | null>(null)
+  const stopRef = useRef<(() => void) | null>(null)
   const turn = turns.find((t) => t.id === evidence.turnId)
 
   // Тайминги реплик живут в шкале аудио сессии OpenAI, а файл начался позже или раньше:
@@ -3736,41 +3796,55 @@ export function EvidenceQuote({
   const offset = audioOffsetSec ?? 0
   const from = turn ? Math.max(0, turn.tStart - offset - PAD) : 0
   const to = turn ? turn.tEnd - offset + PAD : 0
-  const playable = !!audioUrl && !!turn && to > from
+  const playable = available && !!turn && to > from
 
-  function play() {
+  async function toggle() {
     if (!playable) return
-    if (!audio.current) audio.current = new Audio(audioUrl!)
-    const el = audio.current
-    const onTime = () => {
-      if (el.currentTime >= to) {
-        el.pause()
-        el.removeEventListener('timeupdate', onTime)
-        setPlaying(false)
-      }
+    if (playing) {
+      stopRef.current?.()
+      stopRef.current = null
+      setPlaying(false)
+      return
     }
-    el.currentTime = from
-    el.addEventListener('timeupdate', onTime)
-    el.play().then(() => setPlaying(true)).catch(() => setPlaying(false))
+    try {
+      setPlaying(true)
+      const stop = await play(from, to)
+      stopRef.current = stop
+      // Снимаем подсветку, когда фрагмент доиграл.
+      window.setTimeout(() => setPlaying(false), (to - from) * 1000)
+    } catch {
+      setPlaying(false)
+    }
   }
+
+  const hint = !available
+    ? 'Запись недоступна'
+    : state === 'failed'
+      ? 'Запись не удалось загрузить'
+      : state === 'loading'
+        ? 'Загружаю запись…'
+        : 'Прослушать этот фрагмент'
 
   return (
     <button
-      onClick={play}
-      disabled={!playable}
-      title={playable ? 'Прослушать этот фрагмент' : 'Запись этого фрагмента недоступна'}
+      onClick={toggle}
+      disabled={!playable || state === 'failed'}
+      title={hint}
       className="group block w-full rounded border-l-2 border-neutral-300 bg-neutral-50 px-3 py-2 text-left text-sm hover:border-black disabled:cursor-default disabled:opacity-60"
     >
       <span className="italic">«{evidence.quote}»</span>
       {turn && (
         <span className="ml-2 whitespace-nowrap text-xs text-neutral-500">
-          {playing ? '▶ играет' : `${Math.max(0, turn.tStart - offset).toFixed(1)}с`}
+          {playing ? '▶ играет' : state === 'loading' ? '…' : `${Math.max(0, turn.tStart - offset).toFixed(1)}с`}
         </span>
       )}
     </button>
   )
 }
 ```
+
+Запись скачивается и декодируется **один раз на всю карточку** при первом клике по любой
+цитате, дальше каждый фрагмент играется мгновенно и сколько угодно раз.
 
 - [ ] **Step 2: Реализовать блоки карточки**
 
@@ -3780,19 +3854,13 @@ export function EvidenceQuote({
 import { isInsufficient, type Card, type Evidence, type Turn } from '@/lib/types'
 import { EvidenceQuote } from './EvidenceQuote'
 
-type Ctx = { turns: Turn[]; audioUrl: string | null; audioOffsetSec: number | null }
+type Ctx = { turns: Turn[]; audioOffsetSec: number | null }
 
 function Quotes({ evidence, ctx }: { evidence: Evidence[]; ctx: Ctx }) {
   return (
     <div className="mt-2 space-y-1.5">
       {evidence.map((e, i) => (
-        <EvidenceQuote
-          key={i}
-          evidence={e}
-          turns={ctx.turns}
-          audioUrl={ctx.audioUrl}
-          audioOffsetSec={ctx.audioOffsetSec}
-        />
+        <EvidenceQuote key={i} evidence={e} turns={ctx.turns} audioOffsetSec={ctx.audioOffsetSec} />
       ))}
     </div>
   )
@@ -3980,6 +4048,7 @@ import { getSession } from '@/lib/db'
 import {
   DeliveryBlockView, Disclaimer, FactsBlock, LanguageBlockView, StructureBlockView,
 } from '@/components/card/CardSections'
+import { QuoteAudioProvider } from '@/components/card/QuoteAudioProvider'
 import { RetryAnalysis } from '@/components/card/RetryAnalysis'
 
 const STATUS: Record<string, string> = {
@@ -3999,11 +4068,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
   if (!session) notFound()
 
   const minutes = session.metrics ? Math.round(session.metrics.durationSec / 60) : null
-  const ctx = {
-    turns: session.transcript,
-    audioUrl: session.audioUrl,
-    audioOffsetSec: session.audioOffsetSec,
-  }
+  const ctx = { turns: session.transcript, audioOffsetSec: session.audioOffsetSec }
 
   return (
     <main className="mx-auto max-w-3xl space-y-5 p-6">
@@ -4021,6 +4086,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
         )}
       </header>
 
+      <QuoteAudioProvider audioUrl={session.audioUrl}>
       {!session.card ? (
         <section className="rounded-lg border p-5">
           <p className="text-sm text-neutral-700">
@@ -4041,11 +4107,15 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
           <Disclaimer dropped={session.card.droppedClaims} />
         </>
       )}
+      </QuoteAudioProvider>
 
       {session.audioUrl && (
         <details className="rounded-lg border p-5">
           <summary className="cursor-pointer font-medium">Полная запись</summary>
-          <audio controls src={session.audioUrl} className="mt-3 w-full" />
+          {/* Здесь обычный плеер уместен: файл прошёл ремукс, поэтому длительность
+              показывается и перемотка работает. Фрагменты цитат играются иначе — см.
+              QuoteAudioProvider. */}
+          <audio controls preload="metadata" src={session.audioUrl} className="mt-3 w-full" />
         </details>
       )}
 
@@ -4140,7 +4210,15 @@ export async function GET() {
 
 Run: `npm run dev`, открыть `/card/<id>` последней проанализированной сессии.
 
-Проверить: блоки на русском, цитаты на английском, клик по цитате играет нужный фрагмент и останавливается, полная запись играется, транскрипт раскрывается, дисклеймер на месте.
+Проверить по пунктам:
+
+- блоки на русском, цитаты на английском;
+- **клик по цитате играет именно те слова, что в ней написаны** — это главное; если слова
+  не те, врёт `audio_offset_sec`, а не плеер;
+- повторный клик останавливает фрагмент, второй клик по другой цитате играет мгновенно
+  (запись декодируется один раз);
+- у плеера полной записи видна длительность, а не пустота или «бесконечность»;
+- транскрипт раскрывается, дисклеймер на месте, цифр пауз нигде нет.
 
 - [ ] **Step 7: Коммит**
 
@@ -4279,32 +4357,42 @@ export default function NotFound() {
 }
 ```
 
-- [ ] **Step 2: Прогнать сбои на задеплоенном демо**
+- [ ] **Step 2: Убрать страницу проверки таймингов**
+
+`/probe` и `/api/probe-token` из задачи 2 выпускают эфемерные ключи OpenAI без всяких
+ограничений и в проде им не место. Удалить `src/app/probe/` и `src/app/api/probe-token/`;
+выводы остаются в `docs/realtime-probe-findings.md`.
+
+- [ ] **Step 3: Прогнать сбои на задеплоенном демо**
 
 Каждый пункт проверяется на боевом URL, а не локально. Записать фактическое поведение:
 
 | Проверка | Как воспроизвести | Ожидаемое |
 |---|---|---|
 | Нет микрофона | Запретить доступ в браузере | Понятный экран с инструкцией и кнопкой Try again, не белая страница |
-| Обрыв сети | Выключить Wi-Fi на 3-й минуте | Сессия становится `interrupted`, в дашборде видна, карточка с плашкой «прервано» |
-| Закрытая вкладка | Закрыть вкладку посреди разговора | Реплики за вычетом последних секунд сохранены, статус `interrupted` |
+| Обрыв сети | Выключить Wi-Fi на 3-й минуте | Сессия становится `interrupted`, в дашборде видна, карточка с плашкой «прервано» и построенная по частичным данным |
+| Закрытая вкладка | Закрыть вкладку посреди разговора | Реплики за вычетом последних секунд сохранены, статус `interrupted`, **карточка всё равно появляется** — анализ запускает сервер |
 | Молчание | Не отвечать на вопрос дважды | Агент переспрашивает, потом предлагает двигаться дальше |
-| Не тот язык | Ответить по-русски | Агент вежливо просит перейти на английский |
-| Пустой разговор | Начать и сразу завершить | `/api/analyze` возвращает 400, карточка показывает причину, а не пустые блоки |
+| Не тот язык | Ответить по-русски | Агент вежливо просит перейти на английский; на карточке это видно |
+| Односложные ответы | Отвечать «yes», «no», «Berlin» | Блоки языка и манеры показывают «недостаточно данных», а не выдуманную букву |
+| Пустой разговор | Начать и сразу завершить | Статус `failed`, карточка объясняет причину, а не показывает пустые блоки |
 | Кривой id карточки | Открыть `/card/не-uuid` | 404-страница, не стектрейс |
 | Нет квоты OpenAI | Подставить неверный `OPENAI_API_KEY` в preview-деплое | Ошибка на экране согласия до старта, сессия не создана |
+| Лимит прогонов | Опустить `MAX_SESSIONS_PER_HOUR` до 1 в preview и начать второе интервью | Честный экран «попробуйте через час», не пятисотка |
+| Таймаут разговора | Опустить `MAX_INTERVIEW_MS` до минуты в preview и молчать | Разговор завершается сам, карточка строится |
 | Повторный анализ | Нажать «Повторить анализ» на готовой карточке | Карточка перестраивается, дубликата сессии нет |
+| Цитата без записи | Удалить `audio_url` у сессии в базе | Цитаты остаются текстовыми и не кликабельными, карточка не падает |
 
-- [ ] **Step 3: Починить найденное**
+- [ ] **Step 4: Починить найденное**
 
 Каждую расхождение с ожидаемым править на месте, с коммитом на каждую починку. Если поведение изменить дорого — записать факт в `DECISIONS.md`, а не прятать.
 
-- [ ] **Step 4: Прогнать все тесты**
+- [ ] **Step 5: Прогнать все тесты**
 
 Run: `npm run test && npx tsc --noEmit && npm run build`
 Expected: всё зелёное
 
-- [ ] **Step 5: Коммит**
+- [ ] **Step 6: Коммит**
 
 ```bash
 git add -A
