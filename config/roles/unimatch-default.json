@@ -1,0 +1,43 @@
+{
+  "id": "unimatch-default",
+  "company": "Unimatch helps students find and apply to universities abroad. The team is small, remote-first, and works across several time zones.",
+  "role": "Student Success Manager — guiding applicants through the admission process in English, by video call and in writing.",
+  "pitch": "You would own a portfolio of applicants end to end: understanding what they want, matching them with programmes, and keeping their application on track until they are admitted.",
+  "questions": [
+    {
+      "id": "location",
+      "label": "Локация и право на работу",
+      "ask": "Where are you based right now, and are you legally allowed to work from there as a contractor?"
+    },
+    {
+      "id": "experience",
+      "label": "Опыт в домене + пример",
+      "ask": "Tell me about your experience working directly with clients or students. Then walk me through one specific case you handled yourself.",
+      "needsExample": true
+    },
+    {
+      "id": "format",
+      "label": "Формат работы",
+      "ask": "What working setup are you looking for — full time or part time, and how do you feel about a fully remote team across time zones?"
+    },
+    {
+      "id": "start",
+      "label": "Срок выхода",
+      "ask": "If we moved forward, when could you realistically start?"
+    }
+  ],
+  "faq": [
+    {
+      "q": "compensation",
+      "a": "The range depends on experience and is discussed with the recruiter on the next call."
+    },
+    {
+      "q": "process",
+      "a": "This screening, then a call with the hiring manager, then a short practical task."
+    },
+    {
+      "q": "hours",
+      "a": "The team overlaps for a few hours a day; the rest of the schedule is flexible."
+    }
+  ]
+}
