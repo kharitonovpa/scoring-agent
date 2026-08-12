@@ -1,0 +1,164 @@
+'use client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { connectRealtime } from '@/lib/realtime-client'
+import { InterviewRecorder } from '@/lib/recorder'
+import { assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
+import type { Turn } from '@/lib/types'
+
+export type Phase = 'idle' | 'connecting' | 'live' | 'ending' | 'done' | 'error'
+
+const FLUSH_MS = 4000
+const MAX_INTERVIEW_MS = 15 * 60 * 1000
+
+export function useInterview() {
+  const [phase, setPhase] = useState<Phase>('idle')
+  const [error, setError] = useState<string | null>(null)
+  const [turns, setTurns] = useState<Turn[]>([])
+  const [sessionId, setSessionId] = useState<string | null>(null)
+
+  const events = useRef<StampedEvent[]>([])
+  const pc = useRef<RTCPeerConnection | null>(null)
+  const mic = useRef<MediaStream | null>(null)
+  const recorder = useRef<InterviewRecorder | null>(null)
+  const recordingStartSec = useRef<number | null>(null)
+  const startedAt = useRef(0)
+  const flusher = useRef<ReturnType<typeof setInterval> | null>(null)
+  const deadline = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sessionRef = useRef<string | null>(null)
+  const ended = useRef(false)
+
+  const audioOffset = useCallback(
+    () =>
+      recordingStartSec.current === null
+        ? null
+        : computeAudioOffset(events.current, recordingStartSec.current),
+    [],
+  )
+
+  const persist = useCallback(
+    async (done: boolean, status?: 'interrupted', viaBeacon = false) => {
+      const id = sessionRef.current
+      if (!id) return
+      const body = JSON.stringify({
+        sessionId: id,
+        turns: assembleTurns(events.current),
+        audioOffsetSec: audioOffset(),
+        done,
+        status,
+      })
+      // sendBeacon — только для закрывающейся вкладки: он не даёт дождаться ответа,
+      // а при обычном завершении нам нужно, чтобы сервер успел принять транскрипт
+      // до того, как он же запустит анализ.
+      if (viaBeacon && 'sendBeacon' in navigator) {
+        navigator.sendBeacon('/api/turns', new Blob([body], { type: 'application/json' }))
+        return
+      }
+      await fetch('/api/turns', {
+        method: 'POST',
+        body,
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+      })
+    },
+    [audioOffset],
+  )
+
+  const end = useCallback(
+    async (status?: 'interrupted') => {
+      if (ended.current) return
+      ended.current = true
+      setPhase('ending')
+
+      if (flusher.current) clearInterval(flusher.current)
+      if (deadline.current) clearTimeout(deadline.current)
+      pc.current?.close()
+      mic.current?.getTracks().forEach((t) => t.stop())
+
+      // Сначала дожидаемся загрузки записи, потом отдаём транскрипт: анализ на сервере
+      // запускается этим же запросом, и к моменту готовности карточки аудио уже на месте.
+      await recorder.current?.stop()
+      await persist(true, status)
+      setPhase('done')
+    },
+    [persist],
+  )
+
+  const start = useCallback(
+    async (candidateName: string) => {
+      setPhase('connecting')
+      setError(null)
+      try {
+        const res = await fetch('/api/session', {
+          method: 'POST',
+          body: JSON.stringify({ candidateName }),
+          headers: { 'Content-Type': 'application/json' },
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'Could not start the interview')
+
+        sessionRef.current = data.sessionId
+        setSessionId(data.sessionId)
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        mic.current = stream
+
+        recorder.current = new InterviewRecorder(data.sessionId)
+        startedAt.current = performance.now()
+
+        const conn = await connectRealtime({
+          clientSecret: data.clientSecret,
+          mic: stream,
+          onEvent: (event) => {
+            events.current.push({
+              clientTimeSec: (performance.now() - startedAt.current) / 1000,
+              event,
+            })
+            setTurns(assembleTurns(events.current))
+          },
+          onRemoteStream: (remote) => {
+            // ontrack может сработать больше одного раза: второй рекордер на том же
+            // потоке нам не нужен.
+            if (recordingStartSec.current !== null) return
+
+            const el = new Audio()
+            el.autoplay = true
+            el.srcObject = remote
+            void el.play().catch(() => {})
+
+            const startedRecordingAt = recorder.current!.start(stream, remote)
+            recordingStartSec.current = (startedRecordingAt - startedAt.current) / 1000
+          },
+        })
+        pc.current = conn.pc
+
+        conn.pc.onconnectionstatechange = () => {
+          if (
+            ['failed', 'closed', 'disconnected'].includes(conn.pc.connectionState) &&
+            !ended.current
+          ) {
+            void end('interrupted')
+          }
+        }
+
+        flusher.current = setInterval(() => void persist(false), FLUSH_MS)
+        // Забытая открытая вкладка не должна жечь квоту: разговор всё равно закончится.
+        deadline.current = setTimeout(() => void end(), MAX_INTERVIEW_MS)
+        setPhase('live')
+      } catch (err) {
+        setError((err as Error).message)
+        setPhase('error')
+      }
+    },
+    [end, persist],
+  )
+
+  useEffect(() => {
+    const onUnload = () => {
+      if (sessionRef.current && !ended.current) void persist(true, 'interrupted', true)
+    }
+    window.addEventListener('pagehide', onUnload)
+    return () => window.removeEventListener('pagehide', onUnload)
+  }, [persist])
+
+  return { phase, error, turns, sessionId, start, end }
+}

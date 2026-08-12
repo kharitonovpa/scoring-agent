@@ -4,9 +4,11 @@ const saveTurns = vi.fn(async () => {})
 const finishSession = vi.fn(async () => {})
 const getSession = vi.fn(async () => ({ id: 's1', status: 'live' }))
 const runAnalysis = vi.fn(async () => ({ droppedClaims: 0 }))
+const prepareAudio = vi.fn(async () => ({ audioUrl: 'https://blob/seekable.webm' }))
 
 vi.mock('@/lib/db', () => ({ saveTurns, finishSession, getSession }))
 vi.mock('@/lib/analyze/run', () => ({ runAnalysis }))
+vi.mock('@/lib/audio/prepare', () => ({ prepareAudio }))
 
 const post = async (body: unknown) => {
   const { POST } = await import('@/app/api/turns/route')
@@ -53,10 +55,25 @@ describe('POST /api/turns', () => {
     expect(runAnalysis).toHaveBeenCalledWith('s1')
   })
 
+  it('готовит аудио раньше анализа, чтобы цитаты были кликабельны сразу', async () => {
+    await post({ sessionId: 's1', turns: [turn], done: true })
+    expect(prepareAudio).toHaveBeenCalledWith('s1')
+    expect(prepareAudio.mock.invocationCallOrder[0]).toBeLessThan(
+      runAnalysis.mock.invocationCallOrder[0],
+    )
+  })
+
   it('падение анализа не ломает сохранение реплик', async () => {
     runAnalysis.mockRejectedValueOnce(new Error('model exploded') as never)
     const res = await post({ sessionId: 's1', turns: [turn], done: true })
     expect(res.status).toBe(200)
+  })
+
+  it('падение подготовки аудио не отменяет анализ', async () => {
+    prepareAudio.mockRejectedValueOnce(new Error('blob down') as never)
+    const res = await post({ sessionId: 's1', turns: [turn], done: true })
+    expect(res.status).toBe(200)
+    expect(runAnalysis).toHaveBeenCalledWith('s1')
   })
 
   it('404 на неизвестной сессии', async () => {

@@ -1,4 +1,5 @@
 import { runAnalysis } from '@/lib/analyze/run'
+import { prepareAudio } from '@/lib/audio/prepare'
 import { finishSession, getSession, saveTurns } from '@/lib/db'
 import type { Turn } from '@/lib/types'
 
@@ -51,6 +52,16 @@ export async function POST(req: Request) {
   if (!payload.done) return Response.json({ saved: turns.length })
 
   await finishSession(sessionId, payload.status === 'interrupted' ? 'interrupted' : 'analyzing')
+
+  // Аудио готовим до анализа: к моменту, когда карточка станет доступна, цитаты уже
+  // должны быть кликабельны. Обе операции идут в одном окне 300 секунд с запасом.
+  try {
+    await prepareAudio(sessionId)
+  } catch (err) {
+    // Без аудио карточка всё ещё полезна: цитаты останутся текстовыми.
+    console.error('audio prepare failed', sessionId, err)
+  }
+
   try {
     await runAnalysis(sessionId)
   } catch (err) {
