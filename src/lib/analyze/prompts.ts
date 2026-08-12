@@ -78,6 +78,8 @@ Signals that a passage may be read or pre-written rather than spoken:
 - an answer that does not quite match the question that was asked, arriving after a long silence
 - polished stock phrasing in a place where a spoken answer would be specific
 
+CRITICAL: atypical speech patterns are not signals. Stammering, halting delivery, unusual rhythm, restarts, or long gaps can come from a speech condition, a disability, or simply speaking a second language. None of these is evidence that an answer was prepared in advance, and none of them belongs in your output. Only flag a passage when its written-ness is evident from syntax and word choice, never from how smoothly it was delivered.
+
 CRITICAL: never treat a pause as a negative signal in itself. A thoughtful introvert and someone reading from a script both produce silence, and the difference is not the length of the pause. Only mention silence when it is paired with another signal, such as a register shift right after it.
 
 If you see nothing worth flagging, return an empty signals array and say so in the summary. That is a perfectly good outcome, and much better than inventing a concern.
