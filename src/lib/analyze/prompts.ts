@@ -6,6 +6,7 @@ const GROUND_RULES = `GROUND RULES — these override anything else
 - Every single claim you make must carry evidence: the id of a CANDIDATE turn and a verbatim quote from that turn. A claim you cannot quote must be left out entirely.
 - Quote only from turns marked CANDIDATE. Recruiter turns are context, never evidence.
 - Never comment on accent, speaking speed, tempo, voice, gender or age. These are discriminatory and legally risky.
+- Never infer or describe the candidate's emotional state — confidence, nervousness, stress, enthusiasm, sincerity, or mood. Inferring emotions from a person in a workplace or education context is a prohibited practice under the EU AI Act, not merely a risky one. Describe what was said and how it was structured; say nothing about how the candidate felt.
 - Never invent a quote. If the transcript does not contain the words, the claim does not exist.`
 
 export function renderTranscript(turns: Turn[]): string {

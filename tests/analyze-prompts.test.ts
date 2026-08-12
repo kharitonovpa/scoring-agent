@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { deliveryPrompt, languagePrompt, renderTranscript, structurePrompt } from '@/lib/analyze/prompts'
+import {
+  deliveryPrompt,
+  factsPrompt,
+  languagePrompt,
+  renderTranscript,
+  structurePrompt,
+} from '@/lib/analyze/prompts'
 import { loadRole } from '@/lib/roles'
 import type { Metrics, Turn } from '@/lib/types'
 
@@ -52,6 +58,18 @@ describe('промпты', () => {
       expect(prompt).toMatch(/accent/i)
       expect(prompt).toMatch(/age/i)
       expect(prompt).toMatch(/gender/i)
+    }
+  })
+
+  it('каждый промпт запрещает выводы об эмоциональном состоянии', () => {
+    for (const prompt of [
+      structurePrompt(loadRole('unimatch-default'), 'x'),
+      languagePrompt('x'),
+      deliveryPrompt('x', metrics),
+      factsPrompt('x'),
+    ]) {
+      expect(prompt).toMatch(/emotional state/i)
+      expect(prompt).toMatch(/nervousness|confidence/i)
     }
   })
 
