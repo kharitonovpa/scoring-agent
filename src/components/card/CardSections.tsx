@@ -1,0 +1,207 @@
+import { isInsufficient, type Card, type Evidence, type Turn } from '@/lib/types'
+import { EvidenceQuote } from './EvidenceQuote'
+
+type Ctx = { turns: Turn[]; audioOffsetSec: number | null }
+
+function Quotes({ evidence, ctx }: { evidence: Evidence[]; ctx: Ctx }) {
+  return (
+    <div className="mt-2 space-y-1.5">
+      {evidence.map((e, i) => (
+        <EvidenceQuote key={i} evidence={e} turns={ctx.turns} audioOffsetSec={ctx.audioOffsetSec} />
+      ))}
+    </div>
+  )
+}
+
+function Block({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-lg border border-neutral-200 p-5">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      {subtitle && <p className="mt-1 text-sm text-neutral-600">{subtitle}</p>}
+      <div className="mt-4 space-y-4">{children}</div>
+    </section>
+  )
+}
+
+const ANSWERED: Record<string, string> = {
+  yes: 'Ответил на вопрос',
+  partial: 'Ответил частично',
+  off_topic: 'Ушёл в сторону',
+}
+
+export function FactsBlock({ card, ctx }: { card: Card; ctx: Ctx }) {
+  const rows: [string, keyof Card['facts']][] = [
+    ['Локация', 'location'],
+    ['Право на работу', 'workRight'],
+    ['Опыт в домене', 'domainExperience'],
+    ['Формат работы', 'workFormat'],
+    ['Срок выхода', 'startDate'],
+  ]
+  return (
+    <Block title="Собранные факты">
+      {rows.map(([label, key]) => {
+        const fact = card.facts[key]
+        return (
+          <div key={key}>
+            <div className="flex gap-2 text-sm">
+              <span className="w-40 shrink-0 text-neutral-500">{label}</span>
+              <span className={fact.value ? 'font-medium' : 'text-neutral-400'}>
+                {fact.value ?? 'не прозвучало в разговоре'}
+              </span>
+            </div>
+            <Quotes evidence={fact.evidence} ctx={ctx} />
+          </div>
+        )
+      })}
+    </Block>
+  )
+}
+
+export function StructureBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
+  const star: [string, keyof Card['structure']['example']][] = [
+    ['Ситуация', 'situation'],
+    ['Что сделал сам', 'action'],
+    ['Результат', 'result'],
+  ]
+  return (
+    <Block title="Насколько структурно говорит" subtitle={card.structure.summary}>
+      <div className="space-y-4">
+        {card.structure.coverage.map((c) => (
+          <div key={c.questionId}>
+            <div className="text-sm">
+              <span className="font-medium">{c.questionLabel}</span>
+              <span className="ml-2 rounded bg-neutral-100 px-2 py-0.5 text-xs">
+                {ANSWERED[c.answered] ?? c.answered}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-neutral-600">{c.note}</p>
+            <Quotes evidence={c.evidence} ctx={ctx} />
+          </div>
+        ))}
+      </div>
+      <div className="rounded bg-neutral-50 p-4">
+        <h3 className="text-sm font-semibold">
+          Пример из практики: ситуация → действие → результат
+        </h3>
+        {star.map(([label, key]) => {
+          const element = card.structure.example[key]
+          return (
+            <div key={key} className="mt-3">
+              <div className="text-sm">
+                <span className={element.present ? 'text-green-700' : 'text-neutral-400'}>
+                  {element.present ? '✓' : '—'}
+                </span>{' '}
+                <span className="font-medium">{label}</span>
+                <span className="ml-2 text-neutral-600">{element.note}</span>
+              </div>
+              <Quotes evidence={element.evidence} ctx={ctx} />
+            </div>
+          )
+        })}
+      </div>
+    </Block>
+  )
+}
+
+const SUBSCORE: Record<string, string> = {
+  grammar: 'Грамматика',
+  vocabulary: 'Словарь',
+  coherence: 'Связность',
+}
+
+function InsufficientBlock({ title, reason }: { title: string; reason: string }) {
+  return (
+    <Block title={title} subtitle="Недостаточно данных для обоснованной оценки">
+      <p className="text-sm text-neutral-600">{reason}</p>
+      <p className="text-xs text-neutral-500">
+        Оценку по такому объёму речи мы не выдаём: она была бы ничем не подкреплена, а это именно
+        то, от чего уходит этот инструмент.
+      </p>
+    </Block>
+  )
+}
+
+export function LanguageBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
+  if (isInsufficient(card.language)) {
+    return <InsufficientBlock title="Уровень английского" reason={card.language.reason} />
+  }
+  const language = card.language
+  return (
+    <Block
+      title={`Уровень английского: ${language.rangeLow}–${language.rangeHigh}`}
+      subtitle={language.summary}
+    >
+      {language.subscores.map((s) => (
+        <div key={s.name}>
+          <div className="text-sm">
+            <span className="font-medium">{SUBSCORE[s.name] ?? s.name}</span>
+            <span className="ml-2 rounded bg-neutral-100 px-2 py-0.5 text-xs">{s.band}</span>
+            <span className="ml-2 text-neutral-600">{s.note}</span>
+          </div>
+          <Quotes evidence={s.evidence} ctx={ctx} />
+        </div>
+      ))}
+      <p className="text-xs text-neutral-500">
+        Диапазон, а не одна буква: десять минут разговора не дают точности до подуровня.
+      </p>
+    </Block>
+  )
+}
+
+const CONFIDENCE: Record<string, string> = {
+  low: 'слабый сигнал',
+  medium: 'средний сигнал',
+  high: 'сильный сигнал',
+}
+
+export function DeliveryBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
+  if (isInsufficient(card.delivery)) {
+    return <InsufficientBlock title="Как говорит" reason={card.delivery.reason} />
+  }
+  const delivery = card.delivery
+  return (
+    <Block title="Как говорит" subtitle={delivery.summary}>
+      {delivery.signals.length === 0 && (
+        <p className="text-sm text-neutral-600">Сигналов, требующих внимания, не найдено.</p>
+      )}
+      {delivery.signals.map((s, i) => (
+        <div key={i}>
+          <div className="text-sm">
+            <span className="font-medium">{s.label}</span>
+            <span className="ml-2 rounded bg-neutral-100 px-2 py-0.5 text-xs">
+              {CONFIDENCE[s.confidence] ?? s.confidence}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-neutral-600">На что посмотреть: {s.whatToCheck}</p>
+          <Quotes evidence={s.evidence} ctx={ctx} />
+        </div>
+      ))}
+    </Block>
+  )
+}
+
+export function Disclaimer({ dropped }: { dropped: number }) {
+  return (
+    <section className="rounded-lg border border-dashed border-neutral-300 p-5 text-sm text-neutral-600">
+      <p className="font-medium text-neutral-800">Что эта карточка не делает</p>
+      <ul className="mt-2 list-inside list-disc space-y-1">
+        <li>Не оценивает акцент, темп речи, пол и возраст.</li>
+        <li>Не считает паузу негативным сигналом сама по себе.</li>
+        <li>Не принимает решение по кандидату — это делает рекрутер.</li>
+      </ul>
+      <p className="mt-3">
+        Каждое утверждение выше подкреплено цитатой из разговора; цитата кликабельна и играет
+        соответствующий фрагмент записи.
+        {dropped > 0 && ` Утверждений без опоры на разговор отброшено: ${dropped}.`}
+      </p>
+    </section>
+  )
+}

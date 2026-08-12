@@ -19,10 +19,13 @@ import {
 } from './prompts'
 import { DeliveryResult, FactsResult, LanguageResult, StructureResult } from './schemas'
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+// Клиент создаётся при первом вызове, а не при импорте: иначе сборка требует
+// OPENAI_API_KEY на этапе билда, хотя нужен он только в рантайме.
+let client: OpenAI | null = null
+const openai = () => (client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY }))
 
 async function ask<T>(prompt: string, schema: z.ZodType<T>, name: string): Promise<T> {
-  const res = await client.responses.parse({
+  const res = await openai().responses.parse({
     model: process.env.OPENAI_ANALYSIS_MODEL!,
     input: prompt,
     text: { format: zodTextFormat(schema, name) },
