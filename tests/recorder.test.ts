@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mixStreams, pickMimeType } from '@/lib/recorder'
+import { mixStreams, pickMimeType, baseMimeType } from '@/lib/recorder'
 
 describe('mixStreams', () => {
   it('подключает каждый входной поток к общему выходу', () => {
@@ -37,5 +37,18 @@ describe('pickMimeType', () => {
   it('возвращает undefined, когда ничего не поддержано — браузер решит сам', () => {
     vi.stubGlobal('MediaRecorder', { isTypeSupported: () => false })
     expect(pickMimeType()).toBeUndefined()
+  })
+})
+
+describe('baseMimeType', () => {
+  it('срезает параметры кодека — с ними хранилище отвергает загрузку', () => {
+    expect(baseMimeType('audio/webm;codecs=opus')).toBe('audio/webm')
+    expect(baseMimeType('audio/webm; codecs="opus"')).toBe('audio/webm')
+    expect(baseMimeType('video/webm;codecs=vp8,opus')).toBe('video/webm')
+  })
+
+  it('оставляет чистый тип как есть и подставляет запасной для пустого', () => {
+    expect(baseMimeType('audio/mp4')).toBe('audio/mp4')
+    expect(baseMimeType('')).toBe('audio/webm')
   })
 })

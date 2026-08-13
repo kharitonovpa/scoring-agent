@@ -14,7 +14,15 @@ export async function POST(req: Request) {
         if (!sessionId || !(await getSession(sessionId))) throw new Error('Unknown session')
         if (!pathname.startsWith(`interviews/${sessionId}/`)) throw new Error('Bad pathname')
         return {
-          allowedContentTypes: ['audio/webm', 'video/webm', 'audio/mp4'],
+          // Варианты с кодеком тоже перечислены: сверка идёт по точному совпадению,
+          // а браузеры присылают тип с параметрами. Клиент их срезает, но полагаться
+          // на одну защиту в пути, который молча теряет всю запись, не стоит.
+          allowedContentTypes: [
+            'audio/webm',
+            'audio/webm;codecs=opus',
+            'video/webm',
+            'audio/mp4',
+          ],
           addRandomSuffix: false,
           allowOverwrite: true,
           maximumSizeInBytes: 50 * 1024 * 1024,

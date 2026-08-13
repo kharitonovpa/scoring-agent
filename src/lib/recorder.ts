@@ -19,6 +19,15 @@ export function pickMimeType(): string | undefined {
   return candidates.find((t) => MediaRecorder.isTypeSupported(t))
 }
 
+/**
+ * MediaRecorder отдаёт тип с параметрами кодека — `audio/webm;codecs=opus`. Хранилище
+ * сверяет тип со списком разрешённых по точному совпадению, и строка с кодеком в него
+ * не попадает: токен не выдаётся, и запись молча теряется целиком.
+ */
+export function baseMimeType(type: string): string {
+  return (type.split(';')[0] || '').trim().toLowerCase() || 'audio/webm'
+}
+
 export class InterviewRecorder {
   private recorder: MediaRecorder | null = null
   private ctx: AudioContext | null = null
@@ -56,7 +65,7 @@ export class InterviewRecorder {
         access: 'public',
         handleUploadUrl: '/api/blob-token',
         clientPayload: this.sessionId,
-        contentType: data.type || 'audio/webm',
+        contentType: baseMimeType(data.type),
       })
       // Регистрируем сами: вебхук onUploadCompleted не работает на localhost,
       // а проверять аудио только на проде — плохой цикл разработки.
@@ -73,7 +82,15 @@ export class InterviewRecorder {
   }
 
   async stop() {
-    this.recorder?.stop()
+    // stop() отдаёт последний кусок отдельным событием уже после возврата. Ждём `onstop`,
+    // иначе допишется всё, кроме концовки разговора — а там прощание и последние ответы.
+    const recorder = this.recorder
+    if (recorder && recorder.state !== 'inactive') {
+      await new Promise<void>((resolve) => {
+        recorder.onstop = () => resolve()
+        recorder.stop()
+      })
+    }
     await Promise.allSettled(this.pending)
     await this.ctx?.close()
     this.recorder = null

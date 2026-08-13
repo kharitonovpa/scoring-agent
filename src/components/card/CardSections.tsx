@@ -169,9 +169,8 @@ export function DeliveryBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
   const delivery = card.delivery
   return (
     <Block title="Как говорит" subtitle={delivery.summary}>
-      {delivery.signals.length === 0 && (
-        <p className="text-sm text-ink-soft">Сигналов, требующих внимания, не найдено.</p>
-      )}
+      {/* Пустой список — нормальный исход, и он уже сказан в summary над этим блоком.
+          Дублировать его отдельной строкой значит писать одно и то же дважды. */}
       {delivery.signals.map((s, i) => (
         <div key={i}>
           <div className="text-sm">

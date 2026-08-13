@@ -7,7 +7,12 @@ const GROUND_RULES = `GROUND RULES — these override anything else
 - Quote only from turns marked CANDIDATE. Recruiter turns are context, never evidence.
 - Never comment on accent, speaking speed, tempo, voice, gender or age. These are discriminatory and legally risky.
 - Never infer or describe the candidate's emotional state — confidence, nervousness, stress, enthusiasm, sincerity, or mood. Inferring emotions from a person in a workplace or education context is a prohibited practice under the EU AI Act, not merely a risky one. Describe what was said and how it was structured; say nothing about how the candidate felt.
-- Never invent a quote. If the transcript does not contain the words, the claim does not exist.`
+- Never invent a quote. If the transcript does not contain the words, the claim does not exist.
+
+HOW TO WRITE
+- The recruiter reads Russian. Write every piece of prose — summaries, notes, reasons, what to check — in Russian. Quotes are the one exception: reproduce them verbatim in the language the candidate spoke, never translated.
+- Never write turn ids such as [item_ABC123] inside prose. Ids belong only in the evidence fields. The recruiter never sees them and they make the text unreadable.
+- Never describe your own output: no mentions of fields, arrays, schemas, criteria or "the required format". Write as if dictating notes to a colleague who will never see the machinery.`
 
 export function renderTranscript(turns: Turn[]): string {
   return turns
@@ -82,7 +87,7 @@ CRITICAL: atypical speech patterns are not signals. Stammering, halting delivery
 
 CRITICAL: never treat a pause as a negative signal in itself. A thoughtful introvert and someone reading from a script both produce silence, and the difference is not the length of the pause. Only mention silence when it is paired with another signal, such as a register shift right after it.
 
-If you see nothing worth flagging, return an empty signals array and say so in the summary. That is a perfectly good outcome, and much better than inventing a concern.
+If you see nothing worth flagging, report no signals and let the summary say plainly, in Russian, that nothing needed attention — without referring to the output itself. That is a perfectly good outcome, and much better than inventing a concern.
 
 NEUTRAL FACTS measured from the audio, given as context only — not as findings:
 - conversation length: ${metrics.durationSec}s, candidate spoke ${metrics.candidateSharePct}% of the speaking time
