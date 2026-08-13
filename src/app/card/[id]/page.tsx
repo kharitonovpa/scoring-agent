@@ -8,6 +8,7 @@ import {
 } from '@/components/card/CardSections'
 import { QuoteAudioProvider } from '@/components/card/QuoteAudioProvider'
 import { RetryAnalysis } from '@/components/card/RetryAnalysis'
+import { SummaryBlock } from '@/components/card/SummaryBlock'
 import { getSession } from '@/lib/db'
 
 const STATUS: Record<string, string> = {
@@ -59,6 +60,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
           </section>
         ) : (
           <>
+            <SummaryBlock card={session.card} metrics={session.metrics} />
             <FactsBlock card={session.card} ctx={ctx} />
             <StructureBlockView card={session.card} ctx={ctx} />
             <LanguageBlockView card={session.card} ctx={ctx} />

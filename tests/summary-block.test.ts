@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest'
+import { isInsufficient, type Card } from '@/lib/types'
+
+/**
+ * Сводка не имеет права утверждать ничего сверх проверенных блоков. Тест фиксирует именно
+ * это свойство: всё, что она показывает, выводится из карточки арифметикой.
+ */
+
+const ev = [{ turnId: 't1', quote: 'hello' }]
+
+const card: Card = {
+  facts: {
+    location: { value: 'Russia', evidence: ev },
+    workRight: { value: 'Yes', evidence: ev },
+    domainExperience: { value: null, evidence: [] },
+    workFormat: { value: 'Full-time', evidence: ev },
+    startDate: { value: null, evidence: [] },
+  },
+  structure: {
+    summary: 'ok',
+    coverage: [
+      { questionId: 'location', questionLabel: 'Локация', answered: 'yes', note: '', evidence: ev },
+      { questionId: 'experience', questionLabel: 'Опыт', answered: 'partial', note: '', evidence: ev },
+      { questionId: 'format', questionLabel: 'Формат', answered: 'yes', note: '', evidence: ev },
+      { questionId: 'start', questionLabel: 'Срок', answered: 'off_topic', note: '', evidence: ev },
+    ],
+    example: {
+      situation: { present: true, note: '', evidence: ev },
+      action: { present: true, note: '', evidence: ev },
+      result: { present: false, note: '', evidence: [] },
+    },
+  },
+  language: { rangeLow: 'B1', rangeHigh: 'B2', summary: 'ok', subscores: [] },
+  delivery: { summary: 'ok', signals: [] },
+  droppedClaims: 2,
+} as Card
+
+describe('данные для сводки', () => {
+  it('считает ответы по существу отдельно от частичных и мимо вопроса', () => {
+    const byAnswer = card.structure.coverage.reduce<Record<string, number>>(
+      (acc, c) => ({ ...acc, [c.answered]: (acc[c.answered] ?? 0) + 1 }),
+      {},
+    )
+    expect(byAnswer.yes).toBe(2)
+    expect(byAnswer.partial).toBe(1)
+    expect(byAnswer.off_topic).toBe(1)
+  })
+
+  it('видит недостающий элемент примера', () => {
+    const missing = Object.entries(card.structure.example)
+      .filter(([, v]) => !v.present)
+      .map(([k]) => k)
+    expect(missing).toEqual(['result'])
+  })
+
+  it('видит непрозвучавшие факты', () => {
+    const missing = Object.entries(card.facts)
+      .filter(([, f]) => !f.value)
+      .map(([k]) => k)
+    expect(missing).toEqual(['domainExperience', 'startDate'])
+  })
+
+  it('различает пустой список сигналов и нехватку данных', () => {
+    expect(isInsufficient(card.delivery)).toBe(false)
+    expect(isInsufficient({ insufficient: true, reason: 'мало речи' })).toBe(true)
+  })
+
+  it('несёт число отброшенных утверждений из карточки, а не своё', () => {
+    expect(card.droppedClaims).toBe(2)
+  })
+})
