@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "db:init": "node --env-file=.env.local --experimental-strip-types scripts/init-db.ts",
     "preflight": "node --env-file=.env.local --experimental-strip-types scripts/preflight.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "probe": "node --env-file=.env.local --experimental-strip-types scripts/probe-timings.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
