@@ -86,6 +86,7 @@ export function useInterview() {
   const mic = useRef<MediaStream | null>(null)
   const recorder = useRef<InterviewRecorder | null>(null)
   const recordingStartSec = useRef<number | null>(null)
+  const speaker = useRef<HTMLAudioElement | null>(null)
   const startedAt = useRef(0)
   const flusher = useRef<ReturnType<typeof setInterval> | null>(null)
   const deadline = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -179,6 +180,24 @@ export function useInterview() {
     }, SILENCE_BEFORE_PROMPT_MS)
   }, [clearDonePrompt, confirmDone, pushToTalk])
 
+  /**
+   * Обрывает всё, что может звучать. Вынесено отдельно и намеренно синхронно: элемент
+   * воспроизведения живёт вне дерева React, поэтому размонтирование его не касается, а
+   * при падении страницы `end()` не выполняется вовсе — и агент продолжает говорить в
+   * мёртвую вкладку. Идемпотентно.
+   */
+  const silenceEverything = useCallback(() => {
+    const el = speaker.current
+    if (el) {
+      el.pause()
+      el.srcObject = null
+      speaker.current = null
+    }
+    pc.current?.close()
+    pc.current = null
+    mic.current?.getTracks().forEach((t) => t.stop())
+  }, [])
+
   const setMicEnabled = useCallback((on: boolean) => {
     mic.current?.getAudioTracks().forEach((t) => (t.enabled = on))
   }, [])
@@ -252,8 +271,7 @@ export function useInterview() {
       if (wrapUp.current) clearTimeout(wrapUp.current)
       if (watchdog.current) clearTimeout(watchdog.current)
       clearDonePrompt()
-      pc.current?.close()
-      mic.current?.getTracks().forEach((t) => t.stop())
+      silenceEverything()
 
       // Сначала дожидаемся загрузки записи, потом отдаём транскрипт: анализ на сервере
       // запускается этим же запросом, и к моменту готовности карточки аудио уже на месте.
@@ -261,7 +279,7 @@ export function useInterview() {
       await persist(true, status)
       setPhase('done')
     },
-    [clearDonePrompt, persist],
+    [clearDonePrompt, persist, silenceEverything],
   )
 
   const start = useCallback(
@@ -356,6 +374,7 @@ export function useInterview() {
             const el = new Audio()
             el.autoplay = true
             el.srcObject = remote
+            speaker.current = el
             void el.play().catch(() => {})
 
             const startedRecordingAt = recorder.current!.start(stream, remote)
@@ -394,10 +413,17 @@ export function useInterview() {
   useEffect(() => {
     const onUnload = () => {
       if (sessionRef.current && !ended.current) void persist(true, 'interrupted', true)
+      // Уходящая страница обязана замолчать: иначе голос продолжает звучать поверх
+      // закрытой или упавшей вкладки.
+      silenceEverything()
     }
     window.addEventListener('pagehide', onUnload)
-    return () => window.removeEventListener('pagehide', onUnload)
-  }, [persist])
+    // Размонтирование дерева — тоже повод оборвать звук, даже если это падение.
+    return () => {
+      window.removeEventListener('pagehide', onUnload)
+      silenceEverything()
+    }
+  }, [persist, silenceEverything])
 
   return {
     phase,

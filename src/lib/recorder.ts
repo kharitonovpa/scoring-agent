@@ -47,7 +47,13 @@ export class InterviewRecorder {
     const mimeType = pickMimeType()
     this.recorder = new MediaRecorder(mixed, mimeType ? { mimeType } : undefined)
     this.recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) this.pending.push(this.put(e.data))
+      if (e.data.size === 0) return
+      // Снимаем обещание из списка, как только оно завершилось: иначе замыкание держит
+      // Blob каждого куска до конца разговора — десятки мегабайт впустую.
+      const task = this.put(e.data).finally(() => {
+        this.pending = this.pending.filter((p) => p !== task)
+      })
+      this.pending.push(task)
     }
     const startedAt = performance.now()
     this.recorder.start(CHUNK_MS)
