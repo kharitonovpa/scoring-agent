@@ -62,10 +62,17 @@ export async function getSession(id: string) {
   return rows[0] ? toRecord(rows[0]) : null
 }
 
+/**
+ * Предел намеренный: без него дашборд с ростом числа интервью тянул бы из базы всё и
+ * рисовал бы страницу на тысячи строк. Постранично — задача следующего шага, а пока
+ * честный потолок лучше растущей страницы.
+ */
+export const SESSIONS_PAGE_SIZE = 100
+
 export async function listSessions() {
   const rows = (await sql`
     SELECT id, candidate_name, role_id, status, started_at, ended_at
-    FROM sessions ORDER BY started_at DESC
+    FROM sessions ORDER BY started_at DESC LIMIT ${SESSIONS_PAGE_SIZE}
   `) as Row[]
   return rows.map((r) => ({
     id: r.id,

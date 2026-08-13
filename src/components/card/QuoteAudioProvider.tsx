@@ -26,6 +26,7 @@ export function QuoteAudioProvider({
   const [state, setState] = useState<State>('idle')
   const ctxRef = useRef<AudioContext | null>(null)
   const bufferRef = useRef<Promise<AudioBuffer> | null>(null)
+  const playingRef = useRef<AudioBufferSourceNode | null>(null)
 
   const load = useCallback(async () => {
     if (!audioUrl) throw new Error('no recording')
@@ -63,11 +64,19 @@ export function QuoteAudioProvider({
       const buffer = await load()
       const ctx = ctxRef.current!
       await ctx.resume()
+
+      // Рекрутер сравнивает цитаты подряд, и без этого два фрагмента звучали бы разом —
+      // разобрать нельзя ни один.
+      playingRef.current?.stop()
       const source = ctx.createBufferSource()
+      playingRef.current = source
       source.buffer = buffer
       source.connect(ctx.destination)
       const from = Math.max(0, Math.min(fromSec, buffer.duration))
       const duration = Math.max(0, Math.min(toSec, buffer.duration) - from)
+      source.onended = () => {
+        if (playingRef.current === source) playingRef.current = null
+      }
       source.start(0, from, duration)
       return () => source.stop()
     },

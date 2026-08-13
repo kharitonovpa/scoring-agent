@@ -17,11 +17,12 @@ async function fetchBytes(url: string): Promise<ArrayBuffer | null> {
  * остальные — продолжение того же потока, и конкатенация по порядку даёт разбираемый файл.
  */
 async function collectSource(session: { audioChunks: string[] }): Promise<ArrayBuffer | null> {
-  const parts: ArrayBuffer[] = []
-  for (const url of [...session.audioChunks].sort()) {
-    const part = await fetchBytes(url)
-    if (part) parts.push(part)
-  }
+  // Параллельно, но с сохранением порядка: последовательная загрузка восьмидесяти кусков
+  // двадцатиминутного разговора съедала бы секунды впустую, а подготовка идёт в том же
+  // запросе, что и анализ, и делит с ним потолок в 300 секунд.
+  const parts = (await Promise.all([...session.audioChunks].sort().map(fetchBytes))).filter(
+    (part): part is ArrayBuffer => part !== null,
+  )
   if (parts.length === 0) return null
   return new Blob(parts).arrayBuffer()
 }

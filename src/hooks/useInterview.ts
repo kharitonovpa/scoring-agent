@@ -191,12 +191,15 @@ export function useInterview() {
           sessionId: data.sessionId,
           mic: stream,
           onEvent: (event) => {
-            events.current.push({
-              clientTimeSec: (performance.now() - startedAt.current) / 1000,
-              event,
-            })
-            // Только на событиях, которые действительно меняют реплики: на потоковых
-            // delta пересборка была бы 97% лишней работы и вешала бы страницу.
+            // Храним только то, что нужно доказательной базе. Поток целиком — это тысячи
+            // потоковых delta за разговор, и удерживать их незачем: транскрипт и калибровку
+            // строят четыре типа событий, остальное мёртвый груз в памяти вкладки.
+            if (affectsTurns(event)) {
+              events.current.push({
+                clientTimeSec: (performance.now() - startedAt.current) / 1000,
+                event,
+              })
+            }
             if (affectsTurns(event)) setTurns(assembleTurns(events.current))
 
             // Прогресс сообщает агент: он один знает, к какому вопросу перешёл.
