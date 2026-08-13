@@ -13,6 +13,14 @@ export async function useProxyIfConfigured(log: (m: string) => void = console.lo
     process.env.http_proxy
   if (!proxy) return false
 
+  // Переменная переживает выключение VPN, и тогда она указывает на закрытый порт. Молча
+  // направить туда весь трафик — худший исход: отказы выглядят как проблема с ключом или
+  // с сетью, а не как мёртвый прокси. Поэтому сначала стучимся.
+  if (!(await reachable(proxy))) {
+    log(`Прокси ${proxy} не отвечает — переменная устарела, иду напрямую`)
+    return false
+  }
+
   try {
     const { setGlobalDispatcher, ProxyAgent } = await import('undici')
     setGlobalDispatcher(new ProxyAgent(proxy))
@@ -22,4 +30,28 @@ export async function useProxyIfConfigured(log: (m: string) => void = console.lo
     log(`Не получилось включить прокси ${proxy}: ${(err as Error).message}`)
     return false
   }
+}
+
+async function reachable(proxy: string): Promise<boolean> {
+  let target: URL
+  try {
+    target = new URL(proxy)
+  } catch {
+    return false
+  }
+
+  const { createConnection } = await import('node:net')
+  const port = Number(target.port) || (target.protocol === 'https:' ? 443 : 80)
+
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: target.hostname, port })
+    const done = (ok: boolean) => {
+      socket.destroy()
+      resolve(ok)
+    }
+    socket.setTimeout(1500)
+    socket.once('connect', () => done(true))
+    socket.once('timeout', () => done(false))
+    socket.once('error', () => done(false))
+  })
 }
