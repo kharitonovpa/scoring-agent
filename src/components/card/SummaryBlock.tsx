@@ -53,8 +53,9 @@ export function SummaryBlock({ card, metrics }: { card: Card; metrics: Metrics |
     <section className="surface p-6 sm:p-7">
       <h2 className="text-[1.0625rem] font-semibold tracking-tight">Коротко</h2>
       <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
-        Сводка пересчитана из блоков ниже. Ничего нового здесь не утверждается — за каждой
-        строкой стоят те же проверенные цитаты.
+        Сводка пересчитана из блоков ниже — ничего нового здесь не утверждается. Каждое
+        утверждение в карточке подкреплено цитатой из разговора,{' '}
+        <span className="text-ink">а по цитате можно нажать и услышать этот фрагмент записи.</span>
       </p>
 
       <div className="mt-4 divide-y divide-line">

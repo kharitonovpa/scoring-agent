@@ -199,20 +199,31 @@ export function DeliveryBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
   )
 }
 
+/**
+ * Содержание здесь обязательное, а не декоративное: запрет на оценку по акценту, темпу,
+ * полу и возрасту — прямое требование, а «решение принимает рекрутер» снимает главный
+ * юридический риск автоматизированного решения о человеке в найме.
+ *
+ * Но читают это один раз, поэтому блок в полный размер отнимал внимание у данных о
+ * кандидате. Видимой остаётся одна строка — та, без которой нельзя; остальное по клику.
+ */
 export function Disclaimer({ dropped }: { dropped: number }) {
   return (
-    <section className="rounded-card border border-dashed border-line-strong p-6 text-sm leading-relaxed text-ink-soft sm:p-7">
-      <p className="font-medium text-ink">Что эта карточка не делает</p>
-      <ul className="mt-2.5 list-inside list-disc space-y-1">
-        <li>Не оценивает акцент, темп речи, пол и возраст.</li>
+    <details className="rounded-card border border-dashed border-line-strong px-6 py-4 text-sm leading-relaxed text-ink-soft sm:px-7">
+      <summary className="cursor-pointer marker:text-ink-faint">
+        <span className="font-medium text-ink">Решение принимает рекрутер, не ассистент.</span>{' '}
+        Что карточка намеренно не оценивает
+      </summary>
+      <ul className="mt-3 list-inside list-disc space-y-1">
+        <li>Не оценивает акцент, темп речи, пол и возраст — это дискриминация и юридический риск.</li>
         <li>Не считает паузу негативным сигналом сама по себе.</li>
-        <li>Не принимает решение по кандидату — это делает рекрутер.</li>
+        <li>Не описывает эмоции кандидата: вывод эмоций в найме запрещён регулированием.</li>
       </ul>
-      <p className="mt-3">
-        Каждое утверждение выше подкреплено цитатой из разговора; цитата кликабельна и играет
-        соответствующий фрагмент записи.
-        {dropped > 0 && ` Утверждений без опоры на разговор отброшено: ${dropped}.`}
-      </p>
-    </section>
+      {dropped > 0 && (
+        <p className="mt-3">
+          Утверждений без опоры на разговор отброшено: {dropped}. Они не попали в карточку.
+        </p>
+      )}
+    </details>
   )
 }
