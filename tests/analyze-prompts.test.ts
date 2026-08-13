@@ -66,7 +66,7 @@ describe('промпты', () => {
       structurePrompt(loadRole('unimatch-default'), 'x'),
       languagePrompt('x'),
       deliveryPrompt('x', metrics),
-      factsPrompt('x'),
+      factsPrompt(loadRole('unimatch-default'), 'x'),
     ]) {
       expect(prompt).toMatch(/emotional state/i)
       expect(prompt).toMatch(/nervousness|confidence/i)

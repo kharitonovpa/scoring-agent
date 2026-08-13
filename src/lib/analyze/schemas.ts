@@ -60,12 +60,12 @@ export const DeliveryResult = z.object({
 })
 
 // Нельзя `.optional()`: под strict все поля обязательны, «нет значения» выражается null.
-const fact = z.object({ value: z.string().nullable(), evidence: evidenceList })
-
-export const FactsResult = z.object({
-  location: fact,
-  workRight: fact,
-  domainExperience: fact,
-  workFormat: fact,
-  startDate: fact,
+const fact = z.object({
+  id: z.string(),
+  value: z.string().nullable(),
+  evidence: evidenceList,
 })
+
+// Идентификатор факта не перечислением, а строкой: набор задаётся конфигом. Неизвестные
+// идентификаторы отбрасывает код — там же, где живёт вся остальная проверка.
+export const FactsResult = z.object({ facts: z.array(fact) })

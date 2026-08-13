@@ -77,15 +77,13 @@ export type DeliverySignal = {
 
 export type DeliveryBlock = { summary: string; signals: DeliverySignal[] }
 
-export type Fact = { value: string | null; evidence: Evidence[] }
+/**
+ * Факты — список, а не объект с зашитыми полями: набор задаётся конфигом роли, и
+ * добавление факта не должно требовать правки типов, схемы и вёрстки.
+ */
+export type Fact = { id: string; label: string; value: string | null; evidence: Evidence[] }
 
-export type Facts = {
-  location: Fact
-  workRight: Fact
-  domainExperience: Fact
-  workFormat: Fact
-  startDate: Fact
-}
+export type Facts = Fact[]
 
 export type Card = {
   facts: Facts

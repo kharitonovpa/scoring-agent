@@ -38,29 +38,19 @@ const ANSWERED: Record<string, string> = {
 }
 
 export function FactsBlock({ card, ctx }: { card: Card; ctx: Ctx }) {
-  const rows: [string, keyof Card['facts']][] = [
-    ['Локация', 'location'],
-    ['Право на работу', 'workRight'],
-    ['Опыт в домене', 'domainExperience'],
-    ['Формат работы', 'workFormat'],
-    ['Срок выхода', 'startDate'],
-  ]
   return (
     <Block title="Собранные факты">
-      {rows.map(([label, key]) => {
-        const fact = card.facts[key]
-        return (
-          <div key={key}>
-            <div className="flex gap-2 text-sm">
-              <span className="w-40 shrink-0 text-ink-soft">{label}</span>
-              <span className={fact.value ? 'font-medium' : 'text-ink-faint'}>
-                {fact.value ?? 'не прозвучало в разговоре'}
-              </span>
-            </div>
-            <Quotes evidence={fact.evidence} ctx={ctx} />
+      {card.facts.map((fact) => (
+        <div key={fact.id}>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+            <span className="w-40 shrink-0 text-ink-soft">{fact.label}</span>
+            <span className={fact.value ? 'font-medium' : 'text-ink-faint'}>
+              {fact.value ?? 'не прозвучало в разговоре'}
+            </span>
           </div>
-        )
-      })}
+          <Quotes evidence={fact.evidence} ctx={ctx} />
+        </div>
+      ))}
     </Block>
   )
 }

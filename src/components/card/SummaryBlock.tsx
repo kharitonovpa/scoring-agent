@@ -38,14 +38,7 @@ export function SummaryBlock({ card, metrics }: { card: Card; metrics: Metrics |
   ] as const
   const starMissing = star.filter(([, present]) => !present).map(([name]) => name)
 
-  const facts = [
-    ['локация', card.facts.location],
-    ['право на работу', card.facts.workRight],
-    ['опыт', card.facts.domainExperience],
-    ['формат', card.facts.workFormat],
-    ['срок выхода', card.facts.startDate],
-  ] as const
-  const missingFacts = facts.filter(([, f]) => !f.value).map(([name]) => name)
+  const missingFacts = card.facts.filter((f) => !f.value).map((f) => f.label.toLowerCase())
 
   const signals = isInsufficient(card.delivery) ? null : card.delivery.signals.length
 
@@ -96,10 +89,10 @@ export function SummaryBlock({ card, metrics }: { card: Card; metrics: Metrics |
 
         <Row label="Факты собраны">
           {missingFacts.length === 0 ? (
-            <span className="font-medium">все пять</span>
+            <span className="font-medium">все {card.facts.length}</span>
           ) : (
             <span className="font-medium">
-              {facts.length - missingFacts.length} из {facts.length}, не прозвучало:{' '}
+              {card.facts.length - missingFacts.length} из {card.facts.length}, не прозвучало:{' '}
               {missingFacts.join(', ')}
             </span>
           )}

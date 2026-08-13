@@ -1,4 +1,4 @@
-import { END_INTERVIEW_TOOL } from '@/lib/closing'
+import { END_INTERVIEW_TOOL, QUESTION_STARTED_TOOL } from '@/lib/agent-signals'
 import { buildInstructions, loadRole } from '@/lib/roles'
 
 /**
@@ -23,9 +23,26 @@ export function buildSessionConfig(roleId: string, candidateName: string) {
       output: { voice: 'marin' },
     },
     reasoning: { effort: 'low' },
-    // Без этого агент, задав все вопросы, просто замолкает, и кандидат не понимает,
-    // кончилось интервью или нет. Инструментом он завершает разговор сам.
+    // Два служебных инструмента. О прогрессе и о завершении сообщает сам агент: он один
+    // знает, где находится в списке. Выводить это из транскрипта значило бы угадывать по
+    // формулировкам, а они меняются от разговора к разговору.
     tools: [
+      {
+        type: 'function',
+        name: QUESTION_STARTED_TOOL,
+        description:
+          'Call this each time you move on to a new question from the list, right before you ask it. It only updates the progress indicator the candidate sees; it changes nothing in the conversation and needs no reply.',
+        parameters: {
+          type: 'object',
+          // Список идентификаторов берётся из конфига роли: добавили вопрос — агент
+          // сразу может о нём сообщить, править код для этого не нужно.
+          properties: {
+            questionId: { type: 'string', enum: role.questions.map((q) => q.id) },
+          },
+          required: ['questionId'],
+          additionalProperties: false,
+        },
+      },
       {
         type: 'function',
         name: END_INTERVIEW_TOOL,

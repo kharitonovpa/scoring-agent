@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { isEndInterviewCall } from '@/lib/closing'
+import { isEndInterviewCall, readQuestionStarted } from '@/lib/agent-signals'
 import { connectRealtime } from '@/lib/realtime-client'
 import { InterviewRecorder } from '@/lib/recorder'
 import { assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
@@ -21,6 +21,7 @@ export function useInterview() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [muted, setMuted] = useState(false)
+  const [questionId, setQuestionId] = useState<string | null>(null)
 
   const events = useRef<StampedEvent[]>([])
   const pc = useRef<RTCPeerConnection | null>(null)
@@ -142,6 +143,10 @@ export function useInterview() {
             })
             setTurns(assembleTurns(events.current))
 
+            // Прогресс сообщает агент: он один знает, к какому вопросу перешёл.
+            const started = readQuestionStarted(event)
+            if (started) setQuestionId(started)
+
             // Агент отработал все вопросы и попрощался — закрываем разговор за него,
             // дав прощанию доиграть. Кандидат не должен гадать, кончилось ли интервью.
             if (isEndInterviewCall(event)) closing.current = true
@@ -195,5 +200,5 @@ export function useInterview() {
     return () => window.removeEventListener('pagehide', onUnload)
   }, [persist])
 
-  return { phase, error, turns, sessionId, muted, toggleMute, start, end }
+  return { phase, error, turns, sessionId, muted, questionId, toggleMute, start, end }
 }

@@ -45,5 +45,32 @@
       "a": "The team overlaps for a few hours a day; the rest of the schedule is flexible."
     }
   ],
-  "title": "Student Success Manager"
+  "title": "Student Success Manager",
+  "facts": [
+    {
+      "id": "location",
+      "label": "Локация",
+      "what": "where the candidate is based right now"
+    },
+    {
+      "id": "workRight",
+      "label": "Право на работу",
+      "what": "whether they are legally allowed to work from there"
+    },
+    {
+      "id": "domainExperience",
+      "label": "Опыт в домене",
+      "what": "their relevant experience, in one short line"
+    },
+    {
+      "id": "workFormat",
+      "label": "Формат работы",
+      "what": "what working setup they want"
+    },
+    {
+      "id": "startDate",
+      "label": "Срок выхода",
+      "what": "when they could start"
+    }
+  ]
 }

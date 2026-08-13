@@ -1,15 +1,21 @@
 'use client'
 import { useEffect, useRef } from 'react'
+import { loadRole, type RoleQuestion } from '@/lib/roles'
 import type { Turn } from '@/lib/types'
+import { Progress } from './Progress'
+
+const QUESTIONS: RoleQuestion[] = loadRole('unimatch-default').questions
 
 export function LiveCall({
   turns,
   muted,
+  questionId,
   onToggleMute,
   onEnd,
 }: {
   turns: Turn[]
   muted: boolean
+  questionId: string | null
   onToggleMute: () => void
   onEnd: () => void
 }) {
@@ -42,6 +48,8 @@ export function LiveCall({
           against you.
         </p>
       )}
+
+      <Progress questions={QUESTIONS} questionId={questionId} />
 
       <ul className="space-y-3.5">
         {turns.map((t) => (

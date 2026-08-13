@@ -60,7 +60,7 @@ export async function buildCard(input: {
     ask(structurePrompt(role, transcript), StructureResult, 'structure_analysis'),
     enough ? ask(languagePrompt(transcript), LanguageResult, 'language_analysis') : null,
     enough ? ask(deliveryPrompt(transcript, metrics), DeliveryResult, 'delivery_analysis') : null,
-    ask(factsPrompt(transcript), FactsResult, 'facts_extraction'),
+    ask(factsPrompt(role, transcript), FactsResult, 'facts_extraction'),
   ])
 
   let dropped = 0
@@ -80,19 +80,18 @@ export async function buildCard(input: {
     return { ...element, evidence }
   }
 
-  const facts = Object.fromEntries(
-    (['location', 'workRight', 'domainExperience', 'workFormat', 'startDate'] as const).map(
-      (key) => {
-        const fact = rawFacts[key]
-        const evidence = validateEvidence(fact.evidence, turns)
-        if (evidence.length === 0) {
-          if (fact.value) dropped++
-          return [key, { value: null, evidence: [] }]
-        }
-        return [key, { value: fact.value, evidence }]
-      },
-    ),
-  ) as Facts
+  // Порядок и состав задаёт конфиг роли, а не модель: лишние идентификаторы игнорируются,
+  // пропущенные превращаются в «не прозвучало». Так добавление факта в конфиг не требует
+  // ни правки кода, ни доверия к тому, что модель вернула ровно запрошенный набор.
+  const facts: Facts = role.facts.map((declared) => {
+    const raw = rawFacts.facts.find((f) => f.id === declared.id)
+    const evidence = raw ? validateEvidence(raw.evidence, turns) : []
+    if (evidence.length === 0) {
+      if (raw?.value) dropped++
+      return { id: declared.id, label: declared.label, value: null, evidence: [] }
+    }
+    return { id: declared.id, label: declared.label, value: raw!.value, evidence }
+  })
 
   let language: Card['language'] = { insufficient: true, reason: shortfall }
   if (rawLanguage) {

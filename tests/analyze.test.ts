@@ -71,23 +71,21 @@ const language = {
 const delivery = { summary: 'Nothing worth flagging.', signals: [] }
 
 const facts = {
-  location: { value: 'Lisbon', evidence: [{ turnId: 'c1', quote: 'I am based in Lisbon' }] },
-  workRight: {
-    value: 'Contractor for three years',
-    evidence: [{ turnId: 'c1', quote: 'invoicing as a contractor' }],
-  },
-  domainExperience: {
-    value: 'Two years at an education agency',
-    evidence: [{ turnId: 'c2', quote: 'two years at an education agency' }],
-  },
-  workFormat: {
-    value: 'Full time, remote',
-    evidence: [{ turnId: 'c3', quote: 'Full time and fully remote' }],
-  },
-  startDate: {
-    value: 'In three weeks',
-    evidence: [{ turnId: 'c4', quote: 'Three weeks from now' }],
-  },
+  facts: [
+    { id: 'location', value: 'Lisbon', evidence: [{ turnId: 'c1', quote: 'I am based in Lisbon' }] },
+    {
+      id: 'workRight',
+      value: 'Contractor for three years',
+      evidence: [{ turnId: 'c1', quote: 'invoicing as a contractor' }],
+    },
+    {
+      id: 'domainExperience',
+      value: 'Two years at an education agency',
+      evidence: [{ turnId: 'c2', quote: 'two years at an education agency' }],
+    },
+    { id: 'workFormat', value: 'Full time', evidence: [{ turnId: 'c3', quote: 'full time' }] },
+    { id: 'startDate', value: null, evidence: [] },
+  ],
 }
 
 /** Порядок вызовов в buildCard: структура, язык, манера, факты. */
@@ -118,7 +116,7 @@ describe('buildCard', () => {
     expect(card.language).toMatchObject({ rangeLow: 'B2', rangeHigh: 'C1' })
     expect(card.structure.coverage).toHaveLength(1)
     expect(card.structure.coverage[0].questionLabel).toBe('Локация и право на работу')
-    expect(card.facts.location.value).toBe('Lisbon')
+    expect(card.facts.find((f) => f.id === 'location')!.value).toBe('Lisbon')
     expect(metrics.candidateTurnCount).toBe(4)
     expect(parse).toHaveBeenCalledTimes(4)
   })
@@ -143,16 +141,47 @@ describe('buildCard', () => {
     expect(card.droppedClaims).toBeGreaterThan(0)
   })
 
-  it('обнуляет факт, чья цитата не подтвердилась', async () => {
+  it('состав и порядок фактов задаёт конфиг роли, а не модель', async () => {
     mockAll({
       facts: {
-        ...facts,
-        startDate: { value: 'Tomorrow', evidence: [{ turnId: 'c4', quote: 'I can start tomorrow' }] },
+        facts: [
+          // Модель вернула лишний идентификатор и перепутала порядок.
+          { id: 'выдуманный', value: 'x', evidence: [{ turnId: 'c1', quote: 'I am based in Lisbon' }] },
+          ...[...facts.facts].reverse(),
+        ],
       },
     })
     const { buildCard } = await import('@/lib/analyze')
     const { card } = await buildCard({ turns: strongCandidate, roleId: 'unimatch-default' })
-    expect(card.facts.startDate).toEqual({ value: null, evidence: [] })
+
+    const { loadRole } = await import('@/lib/roles')
+    expect(card.facts.map((f) => f.id)).toEqual(loadRole('unimatch-default').facts.map((f) => f.id))
+    expect(card.facts.map((f) => f.label)).toEqual(
+      loadRole('unimatch-default').facts.map((f) => f.label),
+    )
+  })
+
+  it('обнуляет факт, чья цитата не подтвердилась', async () => {
+    mockAll({
+      facts: {
+        facts: [
+          ...facts.facts.filter((f) => f.id !== 'startDate'),
+          {
+            id: 'startDate',
+            value: 'Tomorrow',
+            evidence: [{ turnId: 'c4', quote: 'I can start tomorrow' }],
+          },
+        ],
+      },
+    })
+    const { buildCard } = await import('@/lib/analyze')
+    const { card } = await buildCard({ turns: strongCandidate, roleId: 'unimatch-default' })
+    expect(card.facts.find((f) => f.id === 'startDate')).toEqual({
+      id: 'startDate',
+      label: 'Срок выхода',
+      value: null,
+      evidence: [],
+    })
   })
 
   it('не оценивает язык и манеру при односложных ответах и не тратит на это вызовы', async () => {
@@ -161,11 +190,9 @@ describe('buildCard', () => {
       .mockResolvedValueOnce(parsed({ ...structure, coverage: [] }))
       .mockResolvedValueOnce(
         parsed({
-          location: facts.location,
-          workRight: facts.workRight,
-          domainExperience: { value: null, evidence: [] },
-          workFormat: { value: null, evidence: [] },
-          startDate: { value: null, evidence: [] },
+          facts: facts.facts.map((f) =>
+            f.id === 'location' || f.id === 'workRight' ? f : { ...f, value: null, evidence: [] },
+          ),
         }),
       )
 

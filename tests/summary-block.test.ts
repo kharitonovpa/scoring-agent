@@ -9,13 +9,13 @@ import { isInsufficient, type Card } from '@/lib/types'
 const ev = [{ turnId: 't1', quote: 'hello' }]
 
 const card: Card = {
-  facts: {
-    location: { value: 'Russia', evidence: ev },
-    workRight: { value: 'Yes', evidence: ev },
-    domainExperience: { value: null, evidence: [] },
-    workFormat: { value: 'Full-time', evidence: ev },
-    startDate: { value: null, evidence: [] },
-  },
+  facts: [
+    { id: 'location', label: 'Локация', value: 'Russia', evidence: ev },
+    { id: 'workRight', label: 'Право на работу', value: 'Yes', evidence: ev },
+    { id: 'domainExperience', label: 'Опыт в домене', value: null, evidence: [] },
+    { id: 'workFormat', label: 'Формат работы', value: 'Full-time', evidence: ev },
+    { id: 'startDate', label: 'Срок выхода', value: null, evidence: [] },
+  ],
   structure: {
     summary: 'ok',
     coverage: [
@@ -54,9 +54,7 @@ describe('данные для сводки', () => {
   })
 
   it('видит непрозвучавшие факты', () => {
-    const missing = Object.entries(card.facts)
-      .filter(([, f]) => !f.value)
-      .map(([k]) => k)
+    const missing = card.facts.filter((f) => !f.value).map((f) => f.id)
     expect(missing).toEqual(['domainExperience', 'startDate'])
   })
 

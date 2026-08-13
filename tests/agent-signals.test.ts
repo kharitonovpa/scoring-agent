@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isEndInterviewCall } from '@/lib/closing'
+import { isEndInterviewCall } from '@/lib/agent-signals'
 import { buildSessionConfig } from '@/lib/realtime-session'
 
 describe('isEndInterviewCall', () => {

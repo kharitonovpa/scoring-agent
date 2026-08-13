@@ -10,6 +10,19 @@ export type RoleQuestion = {
   needsExample?: boolean
 }
 
+/**
+ * Факт, который карточка обязана содержать. Список живёт в конфиге, а не в коде: один
+ * вопрос может дать несколько фактов (локация и право на работу спрашиваются вместе),
+ * поэтому один к одному с вопросами они не совпадают.
+ */
+export type RoleFact = {
+  id: string
+  /** Подпись в карточке — её видит рекрутер. */
+  label: string
+  /** Что именно извлекать; уходит в промпт. */
+  what: string
+}
+
 export type RoleConfig = {
   id: string
   /** Короткое человеческое название для интерфейса: в дашборде и карточке. */
@@ -18,6 +31,7 @@ export type RoleConfig = {
   role: string
   pitch: string
   questions: RoleQuestion[]
+  facts: RoleFact[]
   faq: { q: string; a: string }[]
 }
 
@@ -75,6 +89,9 @@ HOW THE CALL GOES
 
 QUESTIONS
 ${questions}
+
+KEEPING THE CANDIDATE ORIENTED
+Right before you ask each question from the list, call the question_started tool with that question's id. The candidate sees a progress indicator built from it, so they know how far along the call is. Follow-ups to a question you already announced do not need another call. Never mention the tool or the indicator out loud.
 
 HOW TO ASK
 - Ask one question at a time and wait for the full answer.

@@ -97,12 +97,14 @@ TRANSCRIPT
 ${transcript}`
 }
 
-export function factsPrompt(transcript: string): string {
+export function factsPrompt(role: RoleConfig, transcript: string): string {
+  const wanted = role.facts.map((f) => `- id "${f.id}": ${f.what}`).join('\n')
   return `Extract the concrete facts the recruiter needs from a screening call transcript.
 
 ${GROUND_RULES}
 
-Extract five fields: location, workRight (whether they are legally allowed to work from there), domainExperience (their relevant experience in one short line), workFormat (what setup they want), startDate (when they could start).
+Return exactly one entry for each of the facts below, using the given id verbatim. Do not add entries with any other id.
+${wanted}
 
 Set value to null when the transcript does not answer it. Do not guess, do not infer from their accent or name, and do not fill a gap with something plausible. A null with no evidence is the correct answer for a question that was never answered.
 
