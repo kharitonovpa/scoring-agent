@@ -11,6 +11,9 @@ export function LiveCall({
   muted,
   questionId,
   nearingLimit,
+  doneIn,
+  onConfirmDone,
+  onDismissDone,
   onToggleMute,
   onEnd,
 }: {
@@ -18,6 +21,9 @@ export function LiveCall({
   muted: boolean
   questionId: string | null
   nearingLimit: boolean
+  doneIn: number | null
+  onConfirmDone: () => void
+  onDismissDone: () => void
   onToggleMute: () => void
   onEnd: () => void
 }) {
@@ -60,6 +66,26 @@ export function LiveCall({
           We are close to the end of the call. Finish the thought you are on — the recruiter will
           wrap up and say goodbye in a moment, and they already have everything they need.
         </p>
+      )}
+
+      {/* Появляется, только когда агент подозрительно долго молчит после ответа. В
+          обычном разговоре он отвечает раньше, и кнопку кандидат не увидит. */}
+      {doneIn !== null && (
+        <div className="surface flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
+          <p className="flex-1 text-sm leading-relaxed text-ink-soft">
+            Still waiting for you. Sending your answer in{' '}
+            <span className="font-medium text-ink">{doneIn}s</span> — or tell the recruiter now if
+            there is more.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={onDismissDone} className="btn btn-quiet px-4 py-2 text-sm">
+              I am still speaking
+            </button>
+            <button onClick={onConfirmDone} className="btn btn-primary px-4 py-2 text-sm">
+              That is my answer
+            </button>
+          </div>
+        </div>
       )}
 
       <ul className="space-y-3.5">

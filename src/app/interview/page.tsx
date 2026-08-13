@@ -21,6 +21,9 @@ export default function InterviewPage() {
     questionId,
     nearingLimit,
     ranOutOfTime,
+    doneIn,
+    confirmDone,
+    dismissDonePrompt,
     toggleMute,
     start,
     end,
@@ -79,6 +82,9 @@ export default function InterviewPage() {
       muted={muted}
       questionId={questionId}
       nearingLimit={nearingLimit}
+      doneIn={doneIn}
+      onConfirmDone={confirmDone}
+      onDismissDone={dismissDonePrompt}
       onToggleMute={toggleMute}
       onEnd={() => void end()}
     />

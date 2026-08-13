@@ -45,6 +45,18 @@ const MAX_INTERVIEW_MS = loadRole('unimatch-default').minutes * 2 * 60 * 1000
  */
 const RESPONSE_WATCHDOG_MS = 2000
 
+/**
+ * Кнопка «я договорил». semantic_vad решает по словам, и на неоднозначной концовке может
+ * ждать — кандидат сидит в тишине и не понимает, услышали его или нет.
+ *
+ * Появляется после SILENCE_BEFORE_PROMPT_MS тишины, отправляет сама через
+ * AUTO_CONFIRM_MS. Обе величины подобраны так, чтобы автоотправка срабатывала **позже
+ * потолка VAD в 8 секунд**: в нормальном разговоре агент отвечает раньше, кнопка просто
+ * исчезает и никого не торопит. Она нужна ровно для случая, когда VAD не сработал.
+ */
+const SILENCE_BEFORE_PROMPT_MS = 4000
+const AUTO_CONFIRM_MS = 9000
+
 const WRAP_UP_MS = loadRole('unimatch-default').minutes * 1.3 * 60 * 1000
 
 // Событие о конце генерации приходит раньше, чем доиграет уже отправленный звук. Рвать
@@ -76,6 +88,10 @@ export function useInterview() {
   const farewellPending = useRef(false)
   const farewellSent = useRef(false)
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [doneIn, setDoneIn] = useState<number | null>(null)
+  const promptTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const countdown = useRef<ReturnType<typeof setInterval> | null>(null)
+  const dismissed = useRef(false)
   const sessionRef = useRef<string | null>(null)
   const ended = useRef(false)
   const closing = useRef(false)
@@ -118,6 +134,43 @@ export function useInterview() {
     farewellSent.current = sendToAgent.current?.(farewellRequest()) ?? false
   }, [])
 
+  const clearDonePrompt = useCallback(() => {
+    if (promptTimer.current) clearTimeout(promptTimer.current)
+    if (countdown.current) clearInterval(countdown.current)
+    promptTimer.current = null
+    countdown.current = null
+    setDoneIn(null)
+  }, [])
+
+  /** Говорим серверу, что реплика кандидата закончена, и просим ответ. */
+  const confirmDone = useCallback(() => {
+    clearDonePrompt()
+    dismissed.current = true
+    // Если VAD уже закрыл буфер, commit вернёт ошибку о пустом буфере — она безобидна,
+    // а response.create всё равно заставит агента ответить на сказанное.
+    sendToAgent.current?.({ type: 'input_audio_buffer.commit' })
+    sendToAgent.current?.({ type: 'response.create' })
+  }, [clearDonePrompt])
+
+  const dismissDonePrompt = useCallback(() => {
+    clearDonePrompt()
+    dismissed.current = true
+  }, [clearDonePrompt])
+
+  const armDonePrompt = useCallback(() => {
+    if (dismissed.current || ended.current || farewellSent.current) return
+    clearDonePrompt()
+    promptTimer.current = setTimeout(() => {
+      let left = Math.round(AUTO_CONFIRM_MS / 1000)
+      setDoneIn(left)
+      countdown.current = setInterval(() => {
+        left -= 1
+        if (left <= 0) confirmDone()
+        else setDoneIn(left)
+      }, 1000)
+    }, SILENCE_BEFORE_PROMPT_MS)
+  }, [clearDonePrompt, confirmDone])
+
   const persist = useCallback(
     async (done: boolean, status?: 'interrupted', viaBeacon = false) => {
       const id = sessionRef.current
@@ -157,6 +210,7 @@ export function useInterview() {
       if (warning.current) clearTimeout(warning.current)
       if (wrapUp.current) clearTimeout(wrapUp.current)
       if (watchdog.current) clearTimeout(watchdog.current)
+      clearDonePrompt()
       pc.current?.close()
       mic.current?.getTracks().forEach((t) => t.stop())
 
@@ -166,7 +220,7 @@ export function useInterview() {
       await persist(true, status)
       setPhase('done')
     },
-    [persist],
+    [clearDonePrompt, persist],
   )
 
   const start = useCallback(
@@ -218,11 +272,18 @@ export function useInterview() {
             const speech = readSpeechState(event)
             if (speech) {
               candidateSpeaking.current = speech === 'started'
+              if (speech === 'started') {
+                // Заговорил снова — кнопка не нужна, и право на неё возвращается.
+                dismissed.current = false
+                clearDonePrompt()
+              }
               if (speech === 'stopped') {
+                armDonePrompt()
                 // Кандидат договорил — теперь прощание никого не перебьёт.
                 if (farewellPending.current) askToWrapUp()
                 // И проверяем, что агент вообще собрался отвечать.
                 if (watchdog.current) clearTimeout(watchdog.current)
+      clearDonePrompt()
                 watchdog.current = setTimeout(() => {
                   if (ended.current || farewellSent.current) return
                   sendToAgent.current?.({ type: 'response.create' })
@@ -230,10 +291,12 @@ export function useInterview() {
               }
             }
 
-            // Агент заговорил сам — страховка не нужна.
-            if (event.type === 'response.created' && watchdog.current) {
-              clearTimeout(watchdog.current)
+            // Агент заговорил сам — ни страховка, ни кнопка больше не нужны.
+            if (event.type === 'response.created') {
+              if (watchdog.current) clearTimeout(watchdog.current)
               watchdog.current = null
+              dismissed.current = false
+              clearDonePrompt()
             }
 
             // Агент отработал все вопросы и попрощался — закрываем разговор за него,
@@ -284,7 +347,7 @@ export function useInterview() {
         setPhase('error')
       }
     },
-    [askToWrapUp, end, persist],
+    [armDonePrompt, askToWrapUp, clearDonePrompt, end, persist],
   )
 
   useEffect(() => {
@@ -303,6 +366,9 @@ export function useInterview() {
     muted,
     questionId,
     nearingLimit,
+    doneIn,
+    confirmDone,
+    dismissDonePrompt,
     ranOutOfTime,
     toggleMute,
     start,
