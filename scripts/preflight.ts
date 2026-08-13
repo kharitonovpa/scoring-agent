@@ -3,13 +3,15 @@
  * потратим время на живое интервью. Запуск: npm run preflight
  */
 
-export {}
+import { useProxyIfConfigured } from '../src/lib/proxy.ts'
 
 const KEY = process.env.OPENAI_API_KEY
 if (!KEY) {
   console.error('✗ OPENAI_API_KEY не задан в .env.local')
   process.exit(1)
 }
+
+await useProxyIfConfigured((m) => console.log(`· ${m}`))
 
 const ok = (m: string) => console.log(`✓ ${m}`)
 const bad = (m: string) => console.log(`✗ ${m}`)

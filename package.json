@@ -21,6 +21,7 @@
     "openai": "^7.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "undici": "^8.10.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -33,6 +34,7 @@
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vercel": "^58.11.0",
     "vitest": "^3.2.7"
   }
 }
