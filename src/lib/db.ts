@@ -67,7 +67,7 @@ export async function getSession(id: string) {
  * рисовал бы страницу на тысячи строк. Постранично — задача следующего шага, а пока
  * честный потолок лучше растущей страницы.
  */
-export const SESSIONS_PAGE_SIZE = 100
+const SESSIONS_PAGE_SIZE = 100
 
 export async function listSessions() {
   const rows = (await sql`

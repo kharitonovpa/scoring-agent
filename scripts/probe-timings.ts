@@ -11,7 +11,7 @@
  * Запуск: npm run probe
  */
 import { writeFileSync } from 'node:fs'
-import { configureProxyFromEnv } from '../src/lib/proxy.ts'
+import { configureProxyFromEnv } from './proxy.ts'
 
 const KEY = process.env.OPENAI_API_KEY
 if (!KEY) {

@@ -3,7 +3,7 @@
  * потратим время на живое интервью. Запуск: npm run preflight
  */
 
-import { configureProxyFromEnv } from '../src/lib/proxy.ts'
+import { configureProxyFromEnv } from './proxy.ts'
 
 const KEY = process.env.OPENAI_API_KEY
 if (!KEY) {
