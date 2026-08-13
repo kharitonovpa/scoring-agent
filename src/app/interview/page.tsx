@@ -12,8 +12,19 @@ export default function InterviewPage() {
   const [step, setStep] = useState<Step>('consent')
   const [name, setName] = useState('')
   const [micError, setMicError] = useState<string | null>(null)
-  const { phase, error, turns, sessionId, muted, questionId, toggleMute, start, end } =
-    useInterview()
+  const {
+    phase,
+    error,
+    turns,
+    sessionId,
+    muted,
+    questionId,
+    nearingLimit,
+    ranOutOfTime,
+    toggleMute,
+    start,
+    end,
+  } = useInterview()
 
   const problem = micError ?? error
   if (problem) {
@@ -31,7 +42,9 @@ export default function InterviewPage() {
     )
   }
 
-  if (phase === 'done' || phase === 'ending') return <ThankYou sessionId={sessionId} />
+  if (phase === 'done' || phase === 'ending') {
+    return <ThankYou sessionId={sessionId} ranOutOfTime={ranOutOfTime} />
+  }
 
   if (step === 'consent') {
     return (
@@ -65,6 +78,7 @@ export default function InterviewPage() {
       turns={turns}
       muted={muted}
       questionId={questionId}
+      nearingLimit={nearingLimit}
       onToggleMute={toggleMute}
       onEnd={() => void end()}
     />

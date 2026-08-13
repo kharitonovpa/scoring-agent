@@ -18,6 +18,17 @@ const FLUSH_MS = 4000
  */
 const MAX_INTERVIEW_MS = loadRole('unimatch-default').minutes * 2 * 60 * 1000
 
+/**
+ * Обратного отсчёта на экране намеренно нет: мы обещали не считать паузу негативным
+ * сигналом, а тикающие часы заставляют человека торопиться и обрывать ответ — то есть
+ * портят те самые данные, которые мы собираем. Индикатор вопросов отвечает «сколько
+ * осталось» лучше, структурой разговора.
+ *
+ * Но молча обрывать разговор нельзя: для кандидата это выглядит как сбой по его вине.
+ * За четверть потолка до конца показываем спокойное предупреждение.
+ */
+const WARN_BEFORE_MS = MAX_INTERVIEW_MS * 0.25
+
 // Событие о конце генерации приходит раньше, чем доиграет уже отправленный звук. Рвать
 // соединение сразу — значит обрубить агенту прощание на полуслове.
 const FAREWELL_GRACE_MS = 2500
@@ -28,6 +39,8 @@ export function useInterview() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [muted, setMuted] = useState(false)
+  const [nearingLimit, setNearingLimit] = useState(false)
+  const [ranOutOfTime, setRanOutOfTime] = useState(false)
   const [questionId, setQuestionId] = useState<string | null>(null)
 
   const events = useRef<StampedEvent[]>([])
@@ -38,6 +51,7 @@ export function useInterview() {
   const startedAt = useRef(0)
   const flusher = useRef<ReturnType<typeof setInterval> | null>(null)
   const deadline = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const warning = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionRef = useRef<string | null>(null)
   const ended = useRef(false)
   const closing = useRef(false)
@@ -101,6 +115,7 @@ export function useInterview() {
 
       if (flusher.current) clearInterval(flusher.current)
       if (deadline.current) clearTimeout(deadline.current)
+      if (warning.current) clearTimeout(warning.current)
       pc.current?.close()
       mic.current?.getTracks().forEach((t) => t.stop())
 
@@ -188,8 +203,12 @@ export function useInterview() {
         }
 
         flusher.current = setInterval(() => void persist(false), FLUSH_MS)
+        warning.current = setTimeout(() => setNearingLimit(true), MAX_INTERVIEW_MS - WARN_BEFORE_MS)
         // Забытая открытая вкладка не должна жечь квоту: разговор всё равно закончится.
-        deadline.current = setTimeout(() => void end(), MAX_INTERVIEW_MS)
+        deadline.current = setTimeout(() => {
+          setRanOutOfTime(true)
+          void end()
+        }, MAX_INTERVIEW_MS)
         setPhase('live')
       } catch (err) {
         setError((err as Error).message)
@@ -207,5 +226,17 @@ export function useInterview() {
     return () => window.removeEventListener('pagehide', onUnload)
   }, [persist])
 
-  return { phase, error, turns, sessionId, muted, questionId, toggleMute, start, end }
+  return {
+    phase,
+    error,
+    turns,
+    sessionId,
+    muted,
+    questionId,
+    nearingLimit,
+    ranOutOfTime,
+    toggleMute,
+    start,
+    end,
+  }
 }

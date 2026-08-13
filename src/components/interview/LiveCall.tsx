@@ -10,12 +10,14 @@ export function LiveCall({
   turns,
   muted,
   questionId,
+  nearingLimit,
   onToggleMute,
   onEnd,
 }: {
   turns: Turn[]
   muted: boolean
   questionId: string | null
+  nearingLimit: boolean
   onToggleMute: () => void
   onEnd: () => void
 }) {
@@ -50,6 +52,15 @@ export function LiveCall({
       )}
 
       <Progress questions={QUESTIONS} questionId={questionId} />
+
+      {/* Без цифр и без обратного отсчёта: сказать «время подходит к концу» достаточно,
+          а секунды на экране заставляют торопиться. */}
+      {nearingLimit && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
+          We are coming up on the time limit for this call. Finish the thought you are on — the
+          recruiter will have everything they need.
+        </p>
+      )}
 
       <ul className="space-y-3.5">
         {turns.map((t) => (
