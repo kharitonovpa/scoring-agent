@@ -3,6 +3,8 @@
  * потратим время на живое интервью. Запуск: npm run preflight
  */
 
+export {}
+
 const KEY = process.env.OPENAI_API_KEY
 if (!KEY) {
   console.error('✗ OPENAI_API_KEY не задан в .env.local')
