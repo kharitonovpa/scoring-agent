@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:init": "node --env-file=.env.local --experimental-strip-types scripts/init-db.ts",
+    "preflight": "node --env-file=.env.local --experimental-strip-types scripts/preflight.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
