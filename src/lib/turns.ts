@@ -29,7 +29,7 @@ export function affectsTurns(event: Record<string, unknown>): boolean {
  * Убирать это надо здесь, а не только в проверке цитат: иначе мусор попадает в промпты
  * как речь кандидата и тянет вниз оценку связности.
  */
-function hasWords(text: string): boolean {
+export function hasWords(text: string): boolean {
   return /[\p{L}\p{N}]/u.test(text)
 }
 

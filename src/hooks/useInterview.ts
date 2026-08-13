@@ -7,6 +7,7 @@ import {
   readSpeechState,
 } from '@/lib/agent-signals'
 import { connectRealtime } from '@/lib/realtime-client'
+import { askForResponse, INITIAL_FLOOR, isQuiet, nextFloor } from '@/lib/floor'
 import { loadRole } from '@/lib/roles'
 import { InterviewRecorder } from '@/lib/recorder'
 import { affectsTurns, assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
@@ -93,7 +94,7 @@ export function useInterview() {
   const warning = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wrapUp = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sendToAgent = useRef<((m: unknown) => boolean) | null>(null)
-  const candidateSpeaking = useRef(false)
+  const floor = useRef(INITIAL_FLOOR)
   const farewellPending = useRef(false)
   const farewellSent = useRef(false)
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -129,13 +130,15 @@ export function useInterview() {
   }, [])
 
   /**
-   * Просим агента закончить разговор. Если кандидат говорит прямо сейчас — ждём, пока он
-   * замолчит: влезть с прощанием в середину фразы хуже, чем закончить на минуту позже.
-   * Если молчит — прощаемся сразу, тянуть незачем.
+   * Просим агента закончить разговор. Если кто-то говорит прямо сейчас — ждём паузы.
+   * Влезть в кандидата с прощанием хуже, чем закончить на минуту позже, а просьба
+   * посреди реплики агента просто теряется: API отвечает ошибкой «response already
+   * active», но farewellSent уже защёлкнут — и разговор не завершился бы до жёсткого
+   * потолка.
    */
   const askToWrapUp = useCallback(() => {
     if (farewellSent.current || ended.current) return
-    if (candidateSpeaking.current) {
+    if (!isQuiet(floor.current)) {
       farewellPending.current = true
       return
     }
@@ -151,15 +154,28 @@ export function useInterview() {
     setDoneIn(null)
   }, [])
 
+  /**
+   * Кандидат обозначил конец реплики сам: нажал «я договорил» или отпустил рацию. Просьба
+   * об ответе идёт через floor.ts — если агент в этот момент говорит, она подождёт его
+   * `response.done` вместо того чтобы оборвать реплику.
+   */
+  const askForAnswer = useCallback(() => {
+    // Если VAD уже закрыл буфер, commit вернёт ошибку о пустом буфере — она безобидна,
+    // а сказанное всё равно уже в разговоре.
+    sendToAgent.current?.({ type: 'input_audio_buffer.commit' })
+    const step = askForResponse(floor.current)
+    floor.current = step.state
+    if (step.effects.includes('request-response')) {
+      sendToAgent.current?.({ type: 'response.create' })
+    }
+  }, [])
+
   /** Говорим серверу, что реплика кандидата закончена, и просим ответ. */
   const confirmDone = useCallback(() => {
     clearDonePrompt()
     dismissed.current = true
-    // Если VAD уже закрыл буфер, commit вернёт ошибку о пустом буфере — она безобидна,
-    // а response.create всё равно заставит агента ответить на сказанное.
-    sendToAgent.current?.({ type: 'input_audio_buffer.commit' })
-    sendToAgent.current?.({ type: 'response.create' })
-  }, [clearDonePrompt])
+    askForAnswer()
+  }, [askForAnswer, clearDonePrompt])
 
   const dismissDonePrompt = useCallback(() => {
     clearDonePrompt()
@@ -226,9 +242,8 @@ export function useInterview() {
     setMicEnabled(false)
     clearDonePrompt()
     // Кандидат сам обозначил конец реплики — гадать по тишине больше не нужно.
-    sendToAgent.current?.({ type: 'input_audio_buffer.commit' })
-    sendToAgent.current?.({ type: 'response.create' })
-  }, [clearDonePrompt, pushToTalk, setMicEnabled])
+    askForAnswer()
+  }, [askForAnswer, clearDonePrompt, pushToTalk, setMicEnabled])
 
   const persist = useCallback(
     async (done: boolean, status?: 'interrupted', viaBeacon = false) => {
@@ -328,35 +343,35 @@ export function useInterview() {
             const started = readQuestionStarted(event)
             if (started) setQuestionId(started)
 
-            const speech = readSpeechState(event)
-            if (speech) {
-              candidateSpeaking.current = speech === 'started'
-              if (speech === 'started') {
-                // Заговорил снова — кнопка не нужна, и право на неё возвращается.
+            // Очерёдность реплик решает floor.ts: правила там чистые и покрыты тестом,
+            // потому что ошибка в них слышна кандидату как оборванная фраза.
+            const step = nextFloor(floor.current, event)
+            floor.current = step.state
+            for (const effect of step.effects) {
+              if (effect === 'clear-silence') {
+                if (watchdog.current) clearTimeout(watchdog.current)
+                watchdog.current = null
+                // Заговорил кто-то из двоих — право на кнопку возвращается.
                 dismissed.current = false
                 clearDonePrompt()
               }
-              if (speech === 'stopped') {
+              if (effect === 'arm-silence') {
                 armDonePrompt()
-                // Кандидат договорил — теперь прощание никого не перебьёт.
-                if (farewellPending.current) askToWrapUp()
-                // И проверяем, что агент вообще собрался отвечать.
                 if (watchdog.current) clearTimeout(watchdog.current)
-      clearDonePrompt()
                 watchdog.current = setTimeout(() => {
                   if (ended.current || farewellSent.current) return
                   sendToAgent.current?.({ type: 'response.create' })
                 }, RESPONSE_WATCHDOG_MS)
               }
+              if (effect === 'request-response' && !ended.current && !farewellSent.current) {
+                sendToAgent.current?.({ type: 'response.create' })
+              }
             }
 
-            // Агент заговорил сам — ни страховка, ни кнопка больше не нужны.
-            if (event.type === 'response.created') {
-              if (watchdog.current) clearTimeout(watchdog.current)
-              watchdog.current = null
-              dismissed.current = false
-              clearDonePrompt()
-            }
+            // Пауза в разговоре — отложенное прощание можно произнести, никого не
+            // оборвав. Пауза наступает и когда договорил кандидат, и когда агент.
+            const paused = readSpeechState(event) === 'stopped' || event.type === 'response.done'
+            if (paused && farewellPending.current) askToWrapUp()
 
             // Агент отработал все вопросы и попрощался — закрываем разговор за него,
             // дав прощанию доиграть. Кандидат не должен гадать, кончилось ли интервью.
