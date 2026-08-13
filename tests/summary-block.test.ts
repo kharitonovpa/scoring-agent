@@ -9,6 +9,10 @@ import { isInsufficient, type Card } from '@/lib/types'
 const ev = [{ turnId: 't1', quote: 'hello' }]
 
 const card: Card = {
+  curiosity: {
+    summary: 'ok',
+    asked: [{ topic: 'компенсация', note: 'спросил про вилку', evidence: ev }],
+  },
   facts: [
     { id: 'location', label: 'Локация', value: 'Russia', evidence: ev },
     { id: 'workRight', label: 'Право на работу', value: 'Yes', evidence: ev },
@@ -56,6 +60,10 @@ describe('данные для сводки', () => {
   it('видит непрозвучавшие факты', () => {
     const missing = card.facts.filter((f) => !f.value).map((f) => f.id)
     expect(missing).toEqual(['domainExperience', 'startDate'])
+  })
+
+  it('показывает темы, о которых спросил кандидат', () => {
+    expect(card.curiosity.asked.map((a) => a.topic)).toEqual(['компенсация'])
   })
 
   it('различает пустой список сигналов и нехватку данных', () => {

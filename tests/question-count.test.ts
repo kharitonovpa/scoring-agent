@@ -149,6 +149,7 @@ describe.each([
           })),
         }),
       )
+      .mockResolvedValueOnce(parsed({ summary: 'ok', asked: [] }))
 
     const { buildCard } = await import('@/lib/analyze')
     const { card } = await buildCard({ turns, roleId: 'synthetic' })

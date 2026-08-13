@@ -85,7 +85,13 @@ export type Fact = { id: string; label: string; value: string | null; evidence: 
 
 export type Facts = Fact[]
 
+export type AskedTopic = { topic: string; note: string; evidence: Evidence[] }
+
+/** О чём кандидат спросил сам. Признак вовлечённости, а не оценка человека. */
+export type CuriosityBlock = { summary: string; asked: AskedTopic[] }
+
 export type Card = {
+  curiosity: CuriosityBlock
   facts: Facts
   structure: StructureBlock
   language: LanguageBlock | Insufficient

@@ -69,3 +69,10 @@ const fact = z.object({
 // Идентификатор факта не перечислением, а строкой: набор задаётся конфигом. Неизвестные
 // идентификаторы отбрасывает код — там же, где живёт вся остальная проверка.
 export const FactsResult = z.object({ facts: z.array(fact) })
+
+export const CuriosityResult = z.object({
+  summary: z.string(),
+  asked: z.array(
+    z.object({ topic: z.string(), note: z.string(), evidence: evidenceList }),
+  ),
+})

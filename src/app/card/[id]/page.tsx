@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import {
+  CuriosityBlockView,
   DeliveryBlockView,
   Disclaimer,
   FactsBlock,
@@ -63,6 +64,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
           <>
             <SummaryBlock card={session.card} metrics={session.metrics} />
             <FactsBlock card={session.card} ctx={ctx} />
+            <CuriosityBlockView card={session.card} ctx={ctx} />
             <StructureBlockView card={session.card} ctx={ctx} />
             <LanguageBlockView card={session.card} ctx={ctx} />
             <DeliveryBlockView card={session.card} ctx={ctx} />

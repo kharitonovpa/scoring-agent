@@ -98,6 +98,16 @@ export function SummaryBlock({ card, metrics }: { card: Card; metrics: Metrics |
           )}
         </Row>
 
+        <Row label="Спросил сам">
+          {card.curiosity.asked.length === 0 ? (
+            <span className="text-ink-faint">вопросов не задавал</span>
+          ) : (
+            <span className="font-medium">
+              {card.curiosity.asked.map((a) => a.topic).join(', ')}
+            </span>
+          )}
+        </Row>
+
         <Row label="Манера речи">
           {signals === null ? (
             <span className="text-ink-faint">данных не хватило для оценки</span>

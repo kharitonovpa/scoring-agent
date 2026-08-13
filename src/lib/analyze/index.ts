@@ -12,12 +12,19 @@ import { loadRole } from '../roles'
 import type { Card, Evidence, Facts, Metrics, Turn } from '../types'
 import {
   deliveryPrompt,
+  curiosityPrompt,
   factsPrompt,
   languagePrompt,
   renderTranscript,
   structurePrompt,
 } from './prompts'
-import { DeliveryResult, FactsResult, LanguageResult, StructureResult } from './schemas'
+import {
+  CuriosityResult,
+  DeliveryResult,
+  FactsResult,
+  LanguageResult,
+  StructureResult,
+} from './schemas'
 
 // Клиент создаётся при первом вызове, а не при импорте: иначе сборка требует
 // OPENAI_API_KEY на этапе билда, хотя нужен он только в рантайме.
@@ -56,11 +63,13 @@ export async function buildCard(input: {
     `${metrics.candidateTurnCount} репл.; для обоснованной оценки нужно от ` +
     `${MIN_CANDIDATE_SPEECH_SEC} с и от ${MIN_CANDIDATE_TURNS} реплик.`
 
-  const [rawStructure, rawLanguage, rawDelivery, rawFacts] = await Promise.all([
+  const [rawStructure, rawLanguage, rawDelivery, rawFacts, rawCuriosity] = await Promise.all([
     ask(structurePrompt(role, transcript), StructureResult, 'structure_analysis'),
     enough ? ask(languagePrompt(transcript, role.minutes), LanguageResult, 'language_analysis') : null,
     enough ? ask(deliveryPrompt(transcript, metrics), DeliveryResult, 'delivery_analysis') : null,
     ask(factsPrompt(role, transcript), FactsResult, 'facts_extraction'),
+    // Не зависит от объёма речи: вопрос кандидата — это вопрос, сколько бы он ни говорил.
+    ask(curiosityPrompt(transcript), CuriosityResult, 'candidate_questions'),
   ])
 
   let dropped = 0
@@ -112,7 +121,11 @@ export async function buildCard(input: {
     delivery = { summary: rawDelivery.summary, signals: signals.kept }
   }
 
+  const asked = keepSupported(rawCuriosity.asked, turns)
+  dropped += asked.dropped
+
   const card: Card = {
+    curiosity: { summary: rawCuriosity.summary, asked: asked.kept },
     facts,
     structure: {
       summary: rawStructure.summary,

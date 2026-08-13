@@ -70,6 +70,8 @@ const language = {
 
 const delivery = { summary: 'Nothing worth flagging.', signals: [] }
 
+const curiosity = { summary: 'ok', asked: [] }
+
 const facts = {
   facts: [
     { id: 'location', value: 'Lisbon', evidence: [{ turnId: 'c1', quote: 'I am based in Lisbon' }] },
@@ -90,7 +92,9 @@ const facts = {
 
 /** Порядок вызовов в buildCard: структура, язык, манера, факты. */
 function mockAll(
-  overrides: Partial<Record<'structure' | 'language' | 'delivery' | 'facts', unknown>> = {},
+  overrides: Partial<
+    Record<'structure' | 'language' | 'delivery' | 'facts' | 'curiosity', unknown>
+  > = {},
 ) {
   parse.mockReset()
   parse
@@ -98,6 +102,7 @@ function mockAll(
     .mockResolvedValueOnce(parsed(overrides.language ?? language))
     .mockResolvedValueOnce(parsed(overrides.delivery ?? delivery))
     .mockResolvedValueOnce(parsed(overrides.facts ?? facts))
+    .mockResolvedValueOnce(parsed(overrides.curiosity ?? curiosity))
 }
 
 beforeEach(() => {
@@ -118,7 +123,7 @@ describe('buildCard', () => {
     expect(card.structure.coverage[0].questionLabel).toBe('Локация и право на работу')
     expect(card.facts.find((f) => f.id === 'location')!.value).toBe('Lisbon')
     expect(metrics.candidateTurnCount).toBe(4)
-    expect(parse).toHaveBeenCalledTimes(4)
+    expect(parse).toHaveBeenCalledTimes(5)
   })
 
   it('выбрасывает выдуманные цитаты и считает выброшенное', async () => {
@@ -195,6 +200,7 @@ describe('buildCard', () => {
           ),
         }),
       )
+      .mockResolvedValueOnce(parsed(curiosity))
 
     const { buildCard } = await import('@/lib/analyze')
     const { card } = await buildCard({ turns: oneWordCandidate, roleId: 'unimatch-default' })
@@ -202,7 +208,10 @@ describe('buildCard', () => {
     expect(card.language).toMatchObject({ insufficient: true })
     expect(card.delivery).toMatchObject({ insufficient: true })
     expect((card.language as { reason: string }).reason).toMatch(/60/)
-    expect(parse).toHaveBeenCalledTimes(2)
+    // Структура, факты и вопросы кандидата — три вызова. Язык и манеру пропускаем: по
+    // односложным ответам их оценивать нечестно. А вопрос кандидата остаётся вопросом
+    // независимо от того, сколько он наговорил, поэтому этот блок считается всегда.
+    expect(parse).toHaveBeenCalledTimes(3)
   })
 
   it('отказывается анализировать разговор без реплик кандидата', async () => {

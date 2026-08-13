@@ -120,3 +120,23 @@ Set value to null when the transcript does not answer it. Do not guess, do not i
 TRANSCRIPT
 ${transcript}`
 }
+
+/**
+ * Отдельный блок появился по прямой просьбе заказчика: до этого созвона рекрутер тратила
+ * пятнадцать-двадцать минут на рассказ о компании и хотела видеть, слушал ли кандидат и
+ * что его в компании интересует. Это признак вовлечённости, а не оценка человека.
+ */
+export function curiosityPrompt(transcript: string): string {
+  return `You review what the candidate asked the recruiter about during a screening call.
+
+${GROUND_RULES}
+
+List the topics the candidate raised on their own initiative — about the company, the role, the process, the money, the team, anything. One entry per topic. For each, quote the candidate asking it.
+
+Report only questions the CANDIDATE asked. Answers they gave to the recruiter's questions are not their questions. If they asked nothing at all, return an empty list and say so plainly in the summary — that is a normal outcome and not a fault of the person.
+
+Do not judge whether the questions were good, smart, or appropriate, and do not infer motivation or interest level from them. Report what was asked; the recruiter draws conclusions.
+
+TRANSCRIPT
+${transcript}`
+}

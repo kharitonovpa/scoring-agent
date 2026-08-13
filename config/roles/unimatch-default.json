@@ -1,10 +1,10 @@
 {
   "id": "unimatch-default",
   "title": "Student Success Manager",
-  "minutes": 10,
-  "company": "Unimatch helps students find and apply to universities abroad. The team is small, remote-first, and works across several time zones.",
-  "role": "Student Success Manager — guiding applicants through the admission process in English, by video call and in writing.",
-  "pitch": "You would own a portfolio of applicants end to end: understanding what they want, matching them with programmes, and keeping their application on track until they are admitted.",
+  "minutes": 12,
+  "company": "Unimatch helps students find and apply to universities abroad — choosing programmes, preparing documents, and staying on track through admission deadlines. The team is small, fully remote and spread across several time zones, so people own their work end to end rather than passing tickets around.",
+  "role": "Student Success Manager — guiding applicants through the whole admission process in English, by video call and in writing.",
+  "pitch": "You would own a portfolio of applicants end to end: understanding what they want, matching them with programmes, and keeping their application on track until they are admitted. A typical week is a mix of calls with students, written follow-ups, and coordination with universities. Success looks like students admitted to a programme that actually fits them, not just any offer.",
   "questions": [
     {
       "id": "location",
@@ -62,16 +62,44 @@
   ],
   "faq": [
     {
-      "q": "compensation",
-      "a": "The range depends on experience and is discussed with the recruiter on the next call."
+      "q": "compensation and review cycle",
+      "a": "The range depends on experience and is agreed with the recruiter on the next call. Compensation is reviewed once a year."
     },
     {
-      "q": "process",
-      "a": "This screening, then a call with the hiring manager, then a short practical task."
+      "q": "hiring process and timing",
+      "a": "This screening, then a call with the hiring manager, then a short practical task, then a decision. Usually two to three weeks end to end."
     },
     {
-      "q": "hours",
-      "a": "The team overlaps for a few hours a day; the rest of the schedule is flexible."
+      "q": "working hours and time zones",
+      "a": "The team overlaps for a few hours a day; the rest of the schedule is yours. No night shifts, no fixed office hours."
+    },
+    {
+      "q": "remote work and equipment",
+      "a": "Fully remote, permanently — the company has no office anyone is expected to attend. You work on your own machine."
+    },
+    {
+      "q": "contract type and location",
+      "a": "People work as contractors and invoice monthly. We hire from many countries as long as you can invoice legally from where you live."
+    },
+    {
+      "q": "team size and who you would work with",
+      "a": "A small team — you would work day to day with two other success managers and the head of admissions."
+    },
+    {
+      "q": "what a typical day looks like",
+      "a": "Two to four calls with students, written follow-ups on their applications, and checking what is at risk of missing a deadline."
+    },
+    {
+      "q": "onboarding and support for a new joiner",
+      "a": "You shadow live student cases for the first two weeks and take your own portfolio after that, with a buddy from the team."
+    },
+    {
+      "q": "growth and what happens after a year",
+      "a": "People grow either into owning a region or into mentoring new success managers. Both paths are used."
+    },
+    {
+      "q": "language requirements",
+      "a": "Work with students happens in English, so English is used daily. Other languages are a plus, never a requirement."
     }
   ]
 }

@@ -55,6 +55,33 @@ export function FactsBlock({ card, ctx }: { card: Card; ctx: Ctx }) {
   )
 }
 
+export function CuriosityBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
+  return (
+    <Block title="О чём спросил сам" subtitle={card.curiosity.summary}>
+      {card.curiosity.asked.length === 0 && (
+        <div className="flex gap-3 rounded-xl bg-paper p-5 text-sm leading-relaxed text-ink-soft">
+          <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent-soft text-xs text-accent">
+            —
+          </span>
+          <span>
+            Кандидат не задал ни одного вопроса о компании, роли или процессе. Это нормальный исход
+            и сам по себе ни о чём не говорит — трактовать его вам.
+          </span>
+        </div>
+      )}
+      {card.curiosity.asked.map((a, i) => (
+        <div key={i}>
+          <div className="text-sm">
+            <span className="font-medium">{a.topic}</span>
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-ink-soft">{a.note}</p>
+          <Quotes evidence={a.evidence} ctx={ctx} />
+        </div>
+      ))}
+    </Block>
+  )
+}
+
 export function StructureBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
   const star: [string, keyof Card['structure']['example']][] = [
     ['Ситуация', 'situation'],
