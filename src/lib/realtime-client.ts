@@ -1,7 +1,5 @@
-const CALLS_URL = 'https://api.openai.com/v1/realtime/calls'
-
 export async function connectRealtime(opts: {
-  clientSecret: string
+  sessionId: string
   mic: MediaStream
   onEvent: (event: Record<string, unknown>) => void
   onRemoteStream: (stream: MediaStream) => void
@@ -26,16 +24,19 @@ export async function connectRealtime(opts: {
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
 
-  const res = await fetch(CALLS_URL, {
+  // Рукопожатие идёт через наш сервер: ключа в браузере нет вообще, а запрос к OpenAI
+  // уходит из региона развёртывания. См. src/app/api/realtime/call/route.ts.
+  const res = await fetch(`/api/realtime/call?sessionId=${encodeURIComponent(opts.sessionId)}`, {
     method: 'POST',
     body: offer.sdp,
-    headers: { Authorization: `Bearer ${opts.clientSecret}`, 'Content-Type': 'application/sdp' },
+    headers: { 'Content-Type': 'application/sdp' },
   })
   if (!res.ok) {
     pc.close()
-    throw new Error(`Realtime handshake failed: ${res.status} ${await res.text()}`)
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? `Realtime handshake failed: ${res.status}`)
   }
 
   await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() })
-  return { pc, callId: res.headers.get('Location')?.split('/').pop() ?? null }
+  return { pc, callId: res.headers.get('X-Call-Id') || null }
 }

@@ -1,5 +1,5 @@
 import { countSessionsSince, createSession } from '@/lib/db'
-import { buildInstructions, loadRole } from '@/lib/roles'
+import { loadRole } from '@/lib/roles'
 
 const DEFAULT_ROLE = 'unimatch-default'
 const MAX_SESSIONS_PER_HOUR = 30
@@ -17,10 +17,11 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Candidate name is required' }, { status: 400 })
   }
 
+  // Роль проверяем здесь, чтобы опечатка в roleId всплыла до начала разговора,
+  // а не на рукопожатии.
   const roleId = payload.roleId ?? DEFAULT_ROLE
-  let role
   try {
-    role = loadRole(roleId)
+    loadRole(roleId)
   } catch {
     return Response.json({ error: `Unknown role: ${roleId}` }, { status: 400 })
   }
@@ -35,45 +36,8 @@ export async function POST(req: Request) {
     )
   }
 
-  const res = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      expires_after: { anchor: 'created_at', seconds: 120 },
-      session: {
-        type: 'realtime',
-        model: 'gpt-realtime-2.1',
-        instructions: `${buildInstructions(role)}\n\nThe candidate's name is ${candidateName}.`,
-        audio: {
-          input: {
-            transcription: { model: 'gpt-4o-transcribe' },
-            turn_detection: { type: 'semantic_vad', eagerness: 'low' },
-          },
-          output: { voice: 'marin' },
-        },
-        reasoning: { effort: 'low' },
-      },
-    }),
-  })
-
-  if (!res.ok) {
-    console.error('client_secrets failed', res.status, await res.text())
-    return Response.json(
-      { error: 'OpenAI is not accepting calls right now. Please try again in a minute.' },
-      { status: 502 },
-    )
-  }
-
-  const secret = (await res.json()) as { value?: string }
-  if (!secret.value) {
-    return Response.json({ error: 'OpenAI returned no client secret' }, { status: 502 })
-  }
-
-  // Ключ запрашивается до создания строки сессии: если у OpenAI кончилась квота,
-  // мы не оставляем в дашборде мусорную сессию, которая никогда не начнётся.
+  // Никакого ключа клиенту: соединение с OpenAI устанавливается обменом SDP через
+  // /api/realtime/call, и конфиг разговора собирается там же на сервере.
   const sessionId = await createSession({ candidateName, roleId })
-  return Response.json({ sessionId, clientSecret: secret.value })
+  return Response.json({ sessionId })
 }

@@ -106,7 +106,7 @@ export function useInterview() {
         startedAt.current = performance.now()
 
         const conn = await connectRealtime({
-          clientSecret: data.clientSecret,
+          sessionId: data.sessionId,
           mic: stream,
           onEvent: (event) => {
             events.current.push({
