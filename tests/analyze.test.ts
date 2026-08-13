@@ -23,7 +23,7 @@ const structure = {
       evidence: [{ turnId: 'c1', quote: 'I am based in Lisbon' }],
     },
   ],
-  example: {
+  examples: [{ questionId: 'solo_delivery',
     situation: {
       present: true,
       note: 'Rejected twice, tight deadline.',
@@ -39,7 +39,7 @@ const structure = {
       note: 'Admitted in August.',
       evidence: [{ turnId: 'c2', quote: 'She was admitted in August' }],
     },
-  },
+  }],
 }
 
 const language = {

@@ -82,12 +82,13 @@ export function CuriosityBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
   )
 }
 
+const STAR: [string, 'situation' | 'action' | 'result'][] = [
+  ['Ситуация', 'situation'],
+  ['Что сделал сам', 'action'],
+  ['Результат', 'result'],
+]
+
 export function StructureBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
-  const star: [string, keyof Card['structure']['example']][] = [
-    ['Ситуация', 'situation'],
-    ['Что сделал сам', 'action'],
-    ['Результат', 'result'],
-  ]
   return (
     <Block title="Насколько структурно говорит" subtitle={card.structure.summary}>
       <div className="space-y-4">
@@ -95,35 +96,38 @@ export function StructureBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
           <div key={c.questionId}>
             <div className="text-sm">
               <span className="font-medium">{c.questionLabel}</span>
-              <span className="chip ml-2">
-                {ANSWERED[c.answered] ?? c.answered}
-              </span>
+              <span className="chip ml-2">{ANSWERED[c.answered] ?? c.answered}</span>
             </div>
             <p className="mt-1 text-sm leading-relaxed text-ink-soft">{c.note}</p>
             <Quotes evidence={c.evidence} ctx={ctx} />
           </div>
         ))}
       </div>
-      <div className="rounded-xl bg-paper p-5">
-        <h3 className="text-sm font-semibold">
-          Пример из практики: ситуация → действие → результат
-        </h3>
-        {star.map(([label, key]) => {
-          const element = card.structure.example[key]
-          return (
-            <div key={key} className="mt-3">
-              <div className="text-sm">
-                <span className={element.present ? 'text-accent' : 'text-ink-faint'}>
-                  {element.present ? '✓' : '—'}
-                </span>{' '}
-                <span className="font-medium">{label}</span>
-                <span className="ml-2 text-ink-soft">{element.note}</span>
+
+      {/* Примеров столько, сколько вопросов их требуют. Раньше здесь был один блок, и
+          второй случай — тот, что показывает продуктовое мышление, — терялся. */}
+      {card.structure.examples.map((example) => (
+        <div key={example.questionId} className="rounded-xl bg-paper p-5">
+          <h3 className="text-sm font-semibold">
+            {example.questionLabel}: ситуация → действие → результат
+          </h3>
+          {STAR.map(([label, key]) => {
+            const element = example[key]
+            return (
+              <div key={key} className="mt-3">
+                <div className="text-sm">
+                  <span className={element.present ? 'text-accent' : 'text-ink-faint'}>
+                    {element.present ? '✓' : '—'}
+                  </span>{' '}
+                  <span className="font-medium">{label}</span>
+                  <span className="ml-2 text-ink-soft">{element.note}</span>
+                </div>
+                <Quotes evidence={element.evidence} ctx={ctx} />
               </div>
-              <Quotes evidence={element.evidence} ctx={ctx} />
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      ))}
     </Block>
   )
 }
@@ -195,8 +199,9 @@ export function DeliveryBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
             ✓
           </span>
           <span>
-            Искали три вещи: признаки заранее заготовленного ответа, чтение с листа и поиск ответа
-            на стороне во время паузы. Ни одна не проявилась — рекрутеру здесь смотреть нечего.
+            Искали признаки заранее написанного текста: письменный синтаксис там, где остальной
+            разговор звучит спонтанно, резкий сдвиг в беглости между ответами, шаблонные
+            формулировки на месте конкретики. Ни один не проявился — здесь смотреть нечего.
           </span>
         </div>
       )}

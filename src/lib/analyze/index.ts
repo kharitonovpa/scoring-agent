@@ -132,11 +132,22 @@ export async function buildCard(input: {
     structure: {
       summary: rawStructure.summary,
       coverage: coverage.kept.map((c) => ({ ...c, questionLabel: labelOf(c.questionId) })),
-      example: {
-        situation: star(rawStructure.example.situation),
-        action: star(rawStructure.example.action),
-        result: star(rawStructure.example.result),
-      },
+      // Порядок и состав задаёт конфиг: разбираем ровно те вопросы, которые требуют
+      // конкретного случая. Лишние идентификаторы от модели игнорируются, пропущенные
+      // становятся примером, которого не было.
+      examples: role.questions
+        .filter((q) => q.needsExample)
+        .map((q) => {
+          const raw = rawStructure.examples.find((e) => e.questionId === q.id)
+          const absent = { present: false, note: 'Случай по этому вопросу не прозвучал.', evidence: [] }
+          return {
+            questionId: q.id,
+            questionLabel: q.label,
+            situation: raw ? star(raw.situation) : absent,
+            action: raw ? star(raw.action) : absent,
+            result: raw ? star(raw.result) : absent,
+          }
+        }),
     },
     language,
     delivery,

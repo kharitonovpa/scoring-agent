@@ -34,6 +34,11 @@ export function renderTranscript(turns: Turn[]): string {
 
 export function structurePrompt(role: RoleConfig, transcript: string): string {
   const questions = role.questions.map((q) => `- ${q.id}: ${q.ask}`).join('\n')
+  const examples =
+    role.questions
+      .filter((q) => q.needsExample)
+      .map((q) => `- ${q.id}: ${q.ask}`)
+      .join('\n') || '- (none for this role)'
   return `You review how structurally a candidate answers in a screening call.
 
 ${GROUND_RULES}
@@ -48,10 +53,15 @@ FOR EACH QUESTION decide whether the candidate answered what was actually asked:
 
 Use exactly the questionId values listed above. Skip a question entirely if it was never asked in the transcript.
 
-THEN look at the one concrete example they gave from their own practice and judge whether these three pieces are present, each separately:
+THEN handle the concrete cases. These questions each asked for one case from the candidate's own practice:
+${examples}
+
+Return one entry per question id above, and judge these three pieces separately for each case:
 - situation: what the context or problem was
 - action: what THEY personally did, not their team
 - result: how it ended, ideally with something measurable
+
+If a question was never asked, or the candidate gave no case for it, still return its entry with all three pieces marked absent.
 
 Write summary as two or three sentences a recruiter can read in ten seconds.
 

@@ -40,10 +40,18 @@ export type QuestionCoverage = {
 
 export type StarElement = { present: boolean; note: string; evidence: Evidence[] }
 
+export type StarExample = {
+  questionId: string
+  questionLabel: string
+  situation: StarElement
+  action: StarElement
+  result: StarElement
+}
+
 export type StructureBlock = {
   summary: string
   coverage: QuestionCoverage[]
-  example: { situation: StarElement; action: StarElement; result: StarElement }
+  examples: StarExample[]
 }
 
 export type CefrBand = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'

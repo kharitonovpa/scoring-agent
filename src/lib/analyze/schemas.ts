@@ -28,7 +28,15 @@ export const StructureResult = z.object({
       evidence: evidenceList,
     }),
   ),
-  example: z.object({ situation: starElement, action: starElement, result: starElement }),
+  // Список, а не одно поле: примеров столько, сколько вопросов их требуют по конфигу.
+  examples: z.array(
+    z.object({
+      questionId: z.string(),
+      situation: starElement,
+      action: starElement,
+      result: starElement,
+    }),
+  ),
 })
 
 const band = z.enum(['A1', 'A2', 'B1', 'B2', 'C1', 'C2'])

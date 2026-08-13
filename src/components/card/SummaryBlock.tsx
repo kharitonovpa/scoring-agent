@@ -31,12 +31,20 @@ export function SummaryBlock({ card, metrics }: { card: Card; metrics: Metrics |
     {},
   )
 
-  const star = [
-    ['ситуация', card.structure.example.situation.present],
-    ['что сделал сам', card.structure.example.action.present],
-    ['результат', card.structure.example.result.present],
-  ] as const
-  const starMissing = star.filter(([, present]) => !present).map(([name]) => name)
+  // По каждому кейсу отдельно: с двумя примерами общий список «чего не хватает» ничего
+  // рекрутеру не говорит — непонятно, в каком из них дыра.
+  const examples = card.structure.examples.map((e) => ({
+    label: e.questionLabel,
+    missing: (
+      [
+        ['ситуация', e.situation.present],
+        ['что сделал сам', e.action.present],
+        ['результат', e.result.present],
+      ] as const
+    )
+      .filter(([, present]) => !present)
+      .map(([name]) => name),
+  }))
 
   const missingFacts = card.facts.filter((f) => !f.value).map((f) => f.label.toLowerCase())
 
@@ -76,16 +84,19 @@ export function SummaryBlock({ card, metrics }: { card: Card; metrics: Metrics |
           )}
         </Row>
 
-        <Row label="Пример из практики">
-          {starMissing.length === 0 ? (
-            <span className="font-medium">полный: ситуация, действие, результат</span>
-          ) : (
-            <>
-              <span className="font-medium">не хватает: {starMissing.join(', ')}</span>
-              <span className="ml-2 text-ink-soft">— стоит переспросить на следующем звонке</span>
-            </>
-          )}
-        </Row>
+        {examples.map((e) => (
+          <Row key={e.label} label="Кейс">
+            <span className="text-ink-soft">{e.label}: </span>
+            {e.missing.length === 0 ? (
+              <span className="font-medium">полный — ситуация, действие, результат</span>
+            ) : (
+              <>
+                <span className="font-medium">не хватает: {e.missing.join(', ')}</span>
+                <span className="ml-2 text-ink-soft">— переспросить на следующем звонке</span>
+              </>
+            )}
+          </Row>
+        ))}
 
         <Row label="Факты собраны">
           {missingFacts.length === 0 ? (

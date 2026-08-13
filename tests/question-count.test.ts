@@ -131,11 +131,11 @@ describe.each([
             note: 'n',
             evidence: [{ turnId: 'c1', quote: 'I am based in Lisbon' }],
           })),
-          example: {
+          examples: [{ questionId: 'q1',
             situation: { present: true, note: 'n', evidence: [{ turnId: 'c2', quote: 'a delayed visa' }] },
             action: { present: true, note: 'n', evidence: [{ turnId: 'c2', quote: 'I rebuilt the timeline' }] },
             result: { present: true, note: 'n', evidence: [{ turnId: 'c2', quote: 'started on time' }] },
-          },
+          }],
         }),
       )
       .mockResolvedValueOnce(parsed({ summary: 'ok', rangeLow: 'B2', rangeHigh: 'C1', subscores: [] }))
@@ -158,5 +158,44 @@ describe.each([
     expect(card.facts.map((f) => f.id)).toEqual(role.facts.map((f) => f.id))
     expect(card.facts.map((f) => f.label)).toEqual(role.facts.map((f) => f.label))
     expect(card.structure.coverage).toHaveLength(questions)
+  })
+})
+
+describe('примеры следуют конфигу', () => {
+  it('роль без вопросов, требующих кейса, не получает примеров', async () => {
+    role = makeRole(2, 3)
+    parse.mockReset()
+    parse
+      .mockResolvedValueOnce(
+        parsed({ summary: 'ok', coverage: [], examples: [{ questionId: 'q1' }] }),
+      )
+      .mockResolvedValueOnce(parsed({ summary: 'ok', rangeLow: 'B2', rangeHigh: 'C1', subscores: [] }))
+      .mockResolvedValueOnce(parsed({ summary: 'ok', signals: [] }))
+      .mockResolvedValueOnce(parsed({ facts: [] }))
+      .mockResolvedValueOnce(parsed({ summary: 'ok', asked: [] }))
+
+    const { buildCard } = await import('@/lib/analyze')
+    const { card } = await buildCard({ turns, roleId: 'synthetic' })
+    // Модель прислала пример, которого конфиг не просил — он игнорируется.
+    expect(card.structure.examples).toEqual([])
+  })
+
+  it('на каждый вопрос с needsExample приходится ровно один кейс', async () => {
+    role = makeRole(2, 3)
+    role.questions[0].needsExample = true
+    role.questions[1].needsExample = true
+    parse.mockReset()
+    parse
+      .mockResolvedValueOnce(parsed({ summary: 'ok', coverage: [], examples: [] }))
+      .mockResolvedValueOnce(parsed({ summary: 'ok', rangeLow: 'B2', rangeHigh: 'C1', subscores: [] }))
+      .mockResolvedValueOnce(parsed({ summary: 'ok', signals: [] }))
+      .mockResolvedValueOnce(parsed({ facts: [] }))
+      .mockResolvedValueOnce(parsed({ summary: 'ok', asked: [] }))
+
+    const { buildCard } = await import('@/lib/analyze')
+    const { card } = await buildCard({ turns, roleId: 'synthetic' })
+    // Модель не прислала ни одного — каждый кейс помечен как непрозвучавший.
+    expect(card.structure.examples.map((e) => e.questionId)).toEqual(['q1', 'q2'])
+    expect(card.structure.examples.every((e) => !e.situation.present)).toBe(true)
   })
 })

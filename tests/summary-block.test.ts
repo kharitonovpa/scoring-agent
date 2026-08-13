@@ -28,11 +28,22 @@ const card: Card = {
       { questionId: 'format', questionLabel: 'Формат', answered: 'yes', note: '', evidence: ev },
       { questionId: 'start', questionLabel: 'Срок', answered: 'off_topic', note: '', evidence: ev },
     ],
-    example: {
-      situation: { present: true, note: '', evidence: ev },
-      action: { present: true, note: '', evidence: ev },
-      result: { present: false, note: '', evidence: [] },
-    },
+    examples: [
+      {
+        questionId: 'solo_delivery',
+        questionLabel: 'Solo-ведение фичи',
+        situation: { present: true, note: '', evidence: ev },
+        action: { present: true, note: '', evidence: ev },
+        result: { present: false, note: '', evidence: [] },
+      },
+      {
+        questionId: 'scope_cut',
+        questionLabel: 'Урезание объёма',
+        situation: { present: true, note: '', evidence: ev },
+        action: { present: true, note: '', evidence: ev },
+        result: { present: true, note: '', evidence: ev },
+      },
+    ],
   },
   language: { rangeLow: 'B1', rangeHigh: 'B2', summary: 'ok', subscores: [] },
   delivery: { summary: 'ok', signals: [] },
@@ -50,11 +61,17 @@ describe('данные для сводки', () => {
     expect(byAnswer.off_topic).toBe(1)
   })
 
-  it('видит недостающий элемент примера', () => {
-    const missing = Object.entries(card.structure.example)
-      .filter(([, v]) => !v.present)
-      .map(([k]) => k)
-    expect(missing).toEqual(['result'])
+  it('видит недостающий элемент в каждом кейсе отдельно', () => {
+    // С двумя примерами общий список «чего не хватает» бесполезен: рекрутеру нужно
+    // знать, в каком именно кейсе дыра.
+    const perExample = card.structure.examples.map((e) => ({
+      id: e.questionId,
+      missing: (['situation', 'action', 'result'] as const).filter((k) => !e[k].present),
+    }))
+    expect(perExample).toEqual([
+      { id: 'solo_delivery', missing: ['result'] },
+      { id: 'scope_cut', missing: [] },
+    ])
   })
 
   it('видит непрозвучавшие факты', () => {
