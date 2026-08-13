@@ -17,12 +17,12 @@ export default function InterviewPage() {
   const problem = micError ?? error
   if (problem) {
     return (
-      <section className="mx-auto max-w-xl space-y-5 p-8">
-        <h1 className="text-2xl font-semibold">We hit a problem</h1>
-        <p className="text-neutral-700">{problem}</p>
+      <section className="mx-auto max-w-xl px-5 py-16 sm:px-6">
+        <h1 className="text-[1.75rem] font-semibold tracking-tight">We hit a problem</h1>
+        <p className="mt-3 leading-relaxed text-ink-soft">{problem}</p>
         <button
           onClick={() => location.reload()}
-          className="rounded bg-black px-5 py-2.5 text-white"
+          className="btn btn-primary mt-8"
         >
           Try again
         </button>
@@ -56,7 +56,7 @@ export default function InterviewPage() {
   }
 
   if (phase === 'connecting') {
-    return <p className="p-8 text-neutral-600">Connecting you to the recruiter…</p>
+    return <p className="mx-auto max-w-xl px-5 py-16 text-ink-soft sm:px-6">Connecting you to the recruiter…</p>
   }
 
   return <LiveCall turns={turns} onEnd={() => void end()} />

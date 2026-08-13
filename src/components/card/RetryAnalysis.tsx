@@ -39,7 +39,7 @@ export function RetryAnalysis({ sessionId, auto = false }: { sessionId: string; 
       <button
         onClick={run}
         disabled={state === 'running'}
-        className="rounded bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
+        className="btn btn-primary mt-1 text-sm"
       >
         {state === 'running' ? 'Анализирую…' : 'Повторить анализ'}
       </button>

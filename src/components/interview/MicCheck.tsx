@@ -51,12 +51,12 @@ export function MicCheck({
   }, [onError])
 
   return (
-    <section className="mx-auto max-w-xl space-y-6 p-8">
-      <h1 className="text-2xl font-semibold">Microphone check</h1>
-      <p className="text-neutral-600">Say a few words. The bar should move while you speak.</p>
-      <div className="h-3 w-full overflow-hidden rounded bg-neutral-200">
+    <section className="mx-auto max-w-xl px-5 py-12 sm:px-6">
+      <h1 className="text-[1.75rem] font-semibold tracking-tight">Microphone check</h1>
+      <p className="mt-3 leading-relaxed text-ink-soft">Say a few words. The bar should move while you speak.</p>
+      <div className="mt-8 h-2.5 w-full overflow-hidden rounded-full bg-line">
         <div
-          className="h-full bg-black transition-[width]"
+          className="h-full rounded-full bg-accent transition-[width] duration-75"
           style={{ width: `${Math.min(100, level * 160)}%` }}
         />
       </div>
@@ -66,7 +66,7 @@ export function MicCheck({
           cleanup.current()
           onReady()
         }}
-        className="rounded bg-black px-5 py-2.5 text-white disabled:opacity-40"
+        className="btn btn-primary mt-8 w-full"
       >
         I can be heard — start the interview
       </button>

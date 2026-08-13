@@ -65,22 +65,22 @@ export function EvidenceQuote({
         : 'Прослушать этот фрагмент'
 
   return (
-    <button
-      onClick={toggle}
-      disabled={!playable || state === 'failed'}
-      title={hint}
-      className="group block w-full rounded border-l-2 border-neutral-300 bg-neutral-50 px-3 py-2 text-left text-sm hover:border-black disabled:cursor-default disabled:opacity-60"
-    >
-      <span className="italic">«{evidence.quote}»</span>
-      {turn && (
-        <span className="ml-2 whitespace-nowrap text-xs text-neutral-500">
-          {playing
-            ? '▶ играет'
-            : state === 'loading'
-              ? '…'
-              : `${Math.max(0, turn.tStart - offset).toFixed(1)}с`}
-        </span>
-      )}
+    <button onClick={toggle} disabled={!playable || state === 'failed'} title={hint} className="quote">
+      <span className="quote-play" aria-hidden>
+        {playing ? '■' : '▶'}
+      </span>
+      <span className="text-sm leading-relaxed">
+        <span className="text-ink">«{evidence.quote}»</span>
+        {turn && (
+          <span className="ml-2 whitespace-nowrap text-xs text-ink-faint">
+            {playing
+              ? 'играет'
+              : state === 'loading'
+                ? 'загружаю…'
+                : `${Math.max(0, turn.tStart - offset).toFixed(1)} с`}
+          </span>
+        )}
+      </span>
     </button>
   )
 }

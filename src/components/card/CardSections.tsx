@@ -5,7 +5,7 @@ type Ctx = { turns: Turn[]; audioOffsetSec: number | null }
 
 function Quotes({ evidence, ctx }: { evidence: Evidence[]; ctx: Ctx }) {
   return (
-    <div className="mt-2 space-y-1.5">
+    <div className="mt-2.5 space-y-1.5">
       {evidence.map((e, i) => (
         <EvidenceQuote key={i} evidence={e} turns={ctx.turns} audioOffsetSec={ctx.audioOffsetSec} />
       ))}
@@ -23,10 +23,10 @@ function Block({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-neutral-200 p-5">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      {subtitle && <p className="mt-1 text-sm text-neutral-600">{subtitle}</p>}
-      <div className="mt-4 space-y-4">{children}</div>
+    <section className="surface p-6 sm:p-7">
+      <h2 className="text-[1.0625rem] font-semibold tracking-tight">{title}</h2>
+      {subtitle && <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{subtitle}</p>}
+      <div className="mt-5 space-y-5">{children}</div>
     </section>
   )
 }
@@ -52,8 +52,8 @@ export function FactsBlock({ card, ctx }: { card: Card; ctx: Ctx }) {
         return (
           <div key={key}>
             <div className="flex gap-2 text-sm">
-              <span className="w-40 shrink-0 text-neutral-500">{label}</span>
-              <span className={fact.value ? 'font-medium' : 'text-neutral-400'}>
+              <span className="w-40 shrink-0 text-ink-soft">{label}</span>
+              <span className={fact.value ? 'font-medium' : 'text-ink-faint'}>
                 {fact.value ?? 'не прозвучало в разговоре'}
               </span>
             </div>
@@ -78,16 +78,16 @@ export function StructureBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
           <div key={c.questionId}>
             <div className="text-sm">
               <span className="font-medium">{c.questionLabel}</span>
-              <span className="ml-2 rounded bg-neutral-100 px-2 py-0.5 text-xs">
+              <span className="chip ml-2">
                 {ANSWERED[c.answered] ?? c.answered}
               </span>
             </div>
-            <p className="mt-1 text-sm text-neutral-600">{c.note}</p>
+            <p className="mt-1 text-sm leading-relaxed text-ink-soft">{c.note}</p>
             <Quotes evidence={c.evidence} ctx={ctx} />
           </div>
         ))}
       </div>
-      <div className="rounded bg-neutral-50 p-4">
+      <div className="rounded-xl bg-paper p-5">
         <h3 className="text-sm font-semibold">
           Пример из практики: ситуация → действие → результат
         </h3>
@@ -96,11 +96,11 @@ export function StructureBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
           return (
             <div key={key} className="mt-3">
               <div className="text-sm">
-                <span className={element.present ? 'text-green-700' : 'text-neutral-400'}>
+                <span className={element.present ? 'text-accent' : 'text-ink-faint'}>
                   {element.present ? '✓' : '—'}
                 </span>{' '}
                 <span className="font-medium">{label}</span>
-                <span className="ml-2 text-neutral-600">{element.note}</span>
+                <span className="ml-2 text-ink-soft">{element.note}</span>
               </div>
               <Quotes evidence={element.evidence} ctx={ctx} />
             </div>
@@ -120,8 +120,8 @@ const SUBSCORE: Record<string, string> = {
 function InsufficientBlock({ title, reason }: { title: string; reason: string }) {
   return (
     <Block title={title} subtitle="Недостаточно данных для обоснованной оценки">
-      <p className="text-sm text-neutral-600">{reason}</p>
-      <p className="text-xs text-neutral-500">
+      <p className="text-sm leading-relaxed text-ink-soft">{reason}</p>
+      <p className="text-xs leading-relaxed text-ink-faint">
         Оценку по такому объёму речи мы не выдаём: она была бы ничем не подкреплена, а это именно
         то, от чего уходит этот инструмент.
       </p>
@@ -143,13 +143,13 @@ export function LanguageBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
         <div key={s.name}>
           <div className="text-sm">
             <span className="font-medium">{SUBSCORE[s.name] ?? s.name}</span>
-            <span className="ml-2 rounded bg-neutral-100 px-2 py-0.5 text-xs">{s.band}</span>
-            <span className="ml-2 text-neutral-600">{s.note}</span>
+            <span className="chip ml-2">{s.band}</span>
+            <span className="ml-2 text-ink-soft">{s.note}</span>
           </div>
           <Quotes evidence={s.evidence} ctx={ctx} />
         </div>
       ))}
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs leading-relaxed text-ink-faint">
         Диапазон, а не одна буква: десять минут разговора не дают точности до подуровня.
       </p>
     </Block>
@@ -170,17 +170,17 @@ export function DeliveryBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
   return (
     <Block title="Как говорит" subtitle={delivery.summary}>
       {delivery.signals.length === 0 && (
-        <p className="text-sm text-neutral-600">Сигналов, требующих внимания, не найдено.</p>
+        <p className="text-sm text-ink-soft">Сигналов, требующих внимания, не найдено.</p>
       )}
       {delivery.signals.map((s, i) => (
         <div key={i}>
           <div className="text-sm">
             <span className="font-medium">{s.label}</span>
-            <span className="ml-2 rounded bg-neutral-100 px-2 py-0.5 text-xs">
+            <span className="chip ml-2">
               {CONFIDENCE[s.confidence] ?? s.confidence}
             </span>
           </div>
-          <p className="mt-1 text-sm text-neutral-600">На что посмотреть: {s.whatToCheck}</p>
+          <p className="mt-1 text-sm leading-relaxed text-ink-soft">На что посмотреть: {s.whatToCheck}</p>
           <Quotes evidence={s.evidence} ctx={ctx} />
         </div>
       ))}
@@ -190,9 +190,9 @@ export function DeliveryBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
 
 export function Disclaimer({ dropped }: { dropped: number }) {
   return (
-    <section className="rounded-lg border border-dashed border-neutral-300 p-5 text-sm text-neutral-600">
-      <p className="font-medium text-neutral-800">Что эта карточка не делает</p>
-      <ul className="mt-2 list-inside list-disc space-y-1">
+    <section className="rounded-card border border-dashed border-line-strong p-6 text-sm leading-relaxed text-ink-soft sm:p-7">
+      <p className="font-medium text-ink">Что эта карточка не делает</p>
+      <ul className="mt-2.5 list-inside list-disc space-y-1">
         <li>Не оценивает акцент, темп речи, пол и возраст.</li>
         <li>Не считает паузу негативным сигналом сама по себе.</li>
         <li>Не принимает решение по кандидату — это делает рекрутер.</li>

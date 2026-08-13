@@ -30,15 +30,15 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
   const ctx = { turns: session.transcript, audioOffsetSec: session.audioOffsetSec }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-5 p-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">{session.candidateName}</h1>
-        <p className="text-sm text-neutral-600">
+    <main className="mx-auto max-w-3xl space-y-5 px-5 py-10 sm:px-6">
+      <header className="space-y-2 pb-1">
+        <h1 className="text-[1.75rem] font-semibold tracking-tight">{session.candidateName}</h1>
+        <p className="text-sm text-ink-soft">
           {session.roleId} · {new Date(session.startedAt).toLocaleString('ru-RU')}
           {minutes !== null && ` · ${minutes} мин`} · {STATUS[session.status] ?? session.status}
         </p>
         {session.status === 'interrupted' && (
-          <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+          <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
             Разговор прервался до конца. Карточка построена по тому, что успело прозвучать — не все
             вопросы были заданы.
           </p>
@@ -47,8 +47,8 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
 
       <QuoteAudioProvider audioUrl={session.audioUrl}>
         {!session.card ? (
-          <section className="rounded-lg border border-neutral-200 p-5">
-            <p className="text-sm text-neutral-700">
+          <section className="surface p-6 sm:p-7">
+            <p className="text-sm leading-relaxed text-ink-soft">
               {session.status === 'failed'
                 ? 'Анализ упал. Данные разговора сохранены — можно попробовать снова.'
                 : 'Карточка ещё не готова.'}
@@ -69,7 +69,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
       </QuoteAudioProvider>
 
       {session.audioUrl && (
-        <details className="rounded-lg border border-neutral-200 p-5">
+        <details className="surface p-6 sm:p-7">
           <summary className="cursor-pointer font-medium">Полная запись</summary>
           {/* Здесь обычный плеер уместен: файл прошёл ремукс, поэтому длительность
               показывается и перемотка работает. Фрагменты цитат играются иначе — см.
@@ -78,13 +78,13 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
         </details>
       )}
 
-      <details className="rounded-lg border border-neutral-200 p-5">
+      <details className="surface p-6 sm:p-7">
         <summary className="cursor-pointer font-medium">Полный транскрипт</summary>
-        <ul className="mt-3 space-y-2 text-sm">
+        <ul className="mt-4 space-y-2.5 text-sm leading-relaxed">
           {session.transcript.map((t) => (
-            <li key={t.id} className={t.speaker === 'agent' ? 'text-neutral-500' : ''}>
-              <span className="mr-2 text-xs text-neutral-400">{t.tStart.toFixed(1)}с</span>
-              <span className="mr-2 text-xs uppercase text-neutral-400">
+            <li key={t.id} className={t.speaker === 'agent' ? 'text-ink-soft' : ''}>
+              <span className="mr-2 text-xs text-ink-faint">{t.tStart.toFixed(1)}с</span>
+              <span className="mr-2 text-xs uppercase tracking-wide text-ink-faint">
                 {t.speaker === 'agent' ? 'агент' : 'кандидат'}
               </span>
               {t.text}
