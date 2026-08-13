@@ -169,8 +169,20 @@ export function DeliveryBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
   const delivery = card.delivery
   return (
     <Block title="Как говорит" subtitle={delivery.summary}>
-      {/* Пустой список — нормальный исход, и он уже сказан в summary над этим блоком.
-          Дублировать его отдельной строкой значит писать одно и то же дважды. */}
+      {/* Пустой список — нормальный исход, но выглядеть он должен как результат проверки,
+          а не как незаполненный блок. Поэтому вместо повтора summary говорим то, чего в
+          summary нет: что именно искали. */}
+      {delivery.signals.length === 0 && (
+        <div className="flex gap-3 rounded-xl bg-paper p-5 text-sm leading-relaxed text-ink-soft">
+          <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent-soft text-xs text-accent">
+            ✓
+          </span>
+          <span>
+            Искали три вещи: признаки заранее заготовленного ответа, чтение с листа и поиск ответа
+            на стороне во время паузы. Ни одна не проявилась — рекрутеру здесь смотреть нечего.
+          </span>
+        </div>
+      )}
       {delivery.signals.map((s, i) => (
         <div key={i}>
           <div className="text-sm">
