@@ -27,6 +27,12 @@ export type RoleConfig = {
   id: string
   /** Короткое человеческое название для интерфейса: в дашборде и карточке. */
   title: string
+  /**
+   * Ожидаемая длительность в минутах. Живёт в конфиге, потому что зависит от количества
+   * вопросов: добавили три — обещать десять минут стало нельзя, а жёсткий таймаут обрезал
+   * бы разговор на середине.
+   */
+  minutes: number
   company: string
   role: string
   pitch: string
@@ -82,7 +88,7 @@ ${role.role}
 ${role.pitch}
 
 HOW THE CALL GOES
-1. Greet the candidate by name, introduce yourself as Unimatch's screening assistant, and say the call takes about ten minutes.
+1. Greet the candidate by name, introduce yourself as Unimatch's screening assistant, and say the call takes about ${role.minutes} minutes.
 2. Spend about thirty seconds on the company and the role. Do not read it out like a script.
 3. Work through the questions below in order.
 4. Ask if they have a question for you, then close the call warmly and tell them the recruiter follows up by email.

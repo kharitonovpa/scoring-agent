@@ -140,7 +140,7 @@ export function LanguageBlockView({ card, ctx }: { card: Card; ctx: Ctx }) {
         </div>
       ))}
       <p className="text-xs leading-relaxed text-ink-faint">
-        Диапазон, а не одна буква: десять минут разговора не дают точности до подуровня.
+        Диапазон, а не одна буква: короткий разговор не даёт точности до подуровня.
       </p>
     </Block>
   )

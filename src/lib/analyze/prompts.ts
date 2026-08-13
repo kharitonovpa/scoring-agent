@@ -50,14 +50,14 @@ TRANSCRIPT
 ${transcript}`
 }
 
-export function languagePrompt(transcript: string): string {
+export function languagePrompt(transcript: string, minutes: number): string {
   return `You assess a candidate's level of English from a screening call transcript, on the CEFR scale.
 
 ${GROUND_RULES}
 
 Assess only what text can show: grammatical range and accuracy, vocabulary precision, and coherence — how well ideas connect. Judge nothing about how they sound.
 
-Give a RANGE (rangeLow, rangeHigh), not a single band: ten minutes of conversation does not support more precision, and a range is the honest answer. rangeLow must be lower than or equal to rangeHigh.
+Give a RANGE (rangeLow, rangeHigh), not a single band: ${minutes} minutes of conversation does not support more precision, and a range is the honest answer. rangeLow must be lower than or equal to rangeHigh.
 
 Give exactly three subscores: grammar, vocabulary, coherence. Each one needs quotes that actually justify the band you chose — a quote showing a complex construction handled well, or an error that caps the level.
 

@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import { loadRole } from '@/lib/roles'
 
-const QUESTIONS = loadRole('unimatch-default').questions
+const ROLE = loadRole('unimatch-default')
+const QUESTIONS = ROLE.questions
 
 export function ConsentScreen({ onReady }: { onReady: (name: string) => void }) {
   const [name, setName] = useState('')
@@ -13,8 +14,9 @@ export function ConsentScreen({ onReady }: { onReady: (name: string) => void }) 
     <section className="mx-auto max-w-xl px-5 py-12 sm:px-6">
       <h1 className="text-[1.75rem] font-semibold tracking-tight">Before we start</h1>
       <p className="mt-3 leading-relaxed text-ink-soft">
-        This is a first-round screening call with Unimatch. It runs in English and takes about ten
-        minutes. You will talk to an AI assistant, and a human recruiter reads the result afterwards.
+        This is a first-round screening call with Unimatch. It runs in English and takes about{' '}
+        {ROLE.minutes} minutes. You will talk to an AI assistant, and a human recruiter reads the
+        result afterwards.
       </p>
 
       {/* Голосовое интервью без видимого прогресса — источник тревоги: человек не знает,

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isEndInterviewCall, readQuestionStarted } from '@/lib/agent-signals'
 import { connectRealtime } from '@/lib/realtime-client'
+import { loadRole } from '@/lib/roles'
 import { InterviewRecorder } from '@/lib/recorder'
 import { assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
 import type { Turn } from '@/lib/types'
@@ -9,7 +10,13 @@ import type { Turn } from '@/lib/types'
 export type Phase = 'idle' | 'connecting' | 'live' | 'ending' | 'done' | 'error'
 
 const FLUSH_MS = 4000
-const MAX_INTERVIEW_MS = 15 * 60 * 1000
+
+/**
+ * Потолок считается от заявленной длительности, а не задан числом: с восемью вопросами
+ * фиксированные пятнадцать минут обрезали бы разговор на середине. Двойной запас — потому
+ * что задача потолка не уложить интервью в срок, а не дать забытой вкладке жечь квоту.
+ */
+const MAX_INTERVIEW_MS = loadRole('unimatch-default').minutes * 2 * 60 * 1000
 
 // Событие о конце генерации приходит раньше, чем доиграет уже отправленный звук. Рвать
 // соединение сразу — значит обрубить агенту прощание на полуслове.

@@ -58,7 +58,7 @@ export async function buildCard(input: {
 
   const [rawStructure, rawLanguage, rawDelivery, rawFacts] = await Promise.all([
     ask(structurePrompt(role, transcript), StructureResult, 'structure_analysis'),
-    enough ? ask(languagePrompt(transcript), LanguageResult, 'language_analysis') : null,
+    enough ? ask(languagePrompt(transcript, role.minutes), LanguageResult, 'language_analysis') : null,
     enough ? ask(deliveryPrompt(transcript, metrics), DeliveryResult, 'delivery_analysis') : null,
     ask(factsPrompt(role, transcript), FactsResult, 'facts_extraction'),
   ])

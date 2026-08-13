@@ -51,7 +51,7 @@ describe('промпты', () => {
   it('каждый промпт требует цитаты и запрещает дискриминационные признаки', () => {
     for (const prompt of [
       structurePrompt(loadRole('unimatch-default'), 'x'),
-      languagePrompt('x'),
+      languagePrompt('x', 10),
       deliveryPrompt('x', metrics),
     ]) {
       expect(prompt).toMatch(/evidence/i)
@@ -64,7 +64,7 @@ describe('промпты', () => {
   it('каждый промпт запрещает выводы об эмоциональном состоянии', () => {
     for (const prompt of [
       structurePrompt(loadRole('unimatch-default'), 'x'),
-      languagePrompt('x'),
+      languagePrompt('x', 10),
       deliveryPrompt('x', metrics),
       factsPrompt(loadRole('unimatch-default'), 'x'),
     ]) {
