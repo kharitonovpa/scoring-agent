@@ -1,5 +1,6 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isEndInterviewCall } from '@/lib/closing'
 import { connectRealtime } from '@/lib/realtime-client'
 import { InterviewRecorder } from '@/lib/recorder'
 import { assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
@@ -9,6 +10,10 @@ export type Phase = 'idle' | 'connecting' | 'live' | 'ending' | 'done' | 'error'
 
 const FLUSH_MS = 4000
 const MAX_INTERVIEW_MS = 15 * 60 * 1000
+
+// Событие о конце генерации приходит раньше, чем доиграет уже отправленный звук. Рвать
+// соединение сразу — значит обрубить агенту прощание на полуслове.
+const FAREWELL_GRACE_MS = 2500
 
 export function useInterview() {
   const [phase, setPhase] = useState<Phase>('idle')
@@ -27,6 +32,7 @@ export function useInterview() {
   const deadline = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionRef = useRef<string | null>(null)
   const ended = useRef(false)
+  const closing = useRef(false)
 
   const audioOffset = useCallback(
     () =>
@@ -130,6 +136,14 @@ export function useInterview() {
               event,
             })
             setTurns(assembleTurns(events.current))
+
+            // Агент отработал все вопросы и попрощался — закрываем разговор за него,
+            // дав прощанию доиграть. Кандидат не должен гадать, кончилось ли интервью.
+            if (isEndInterviewCall(event)) closing.current = true
+            if (closing.current && event.type === 'response.done') {
+              closing.current = false
+              setTimeout(() => void end(), FAREWELL_GRACE_MS)
+            }
           },
           onRemoteStream: (remote) => {
             // ontrack может сработать больше одного раза: второй рекордер на том же

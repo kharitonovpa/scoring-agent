@@ -1,3 +1,4 @@
+import { END_INTERVIEW_TOOL } from '@/lib/closing'
 import { buildInstructions, loadRole } from '@/lib/roles'
 
 /**
@@ -19,5 +20,17 @@ export function buildSessionConfig(roleId: string, candidateName: string) {
       output: { voice: 'marin' },
     },
     reasoning: { effort: 'low' },
+    // Без этого агент, задав все вопросы, просто замолкает, и кандидат не понимает,
+    // кончилось интервью или нет. Инструментом он завершает разговор сам.
+    tools: [
+      {
+        type: 'function',
+        name: END_INTERVIEW_TOOL,
+        description:
+          'Call this immediately after you have said goodbye, to end the interview and let the candidate go. Do not call it before you have said your closing words out loud.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    ],
+    tool_choice: 'auto',
   }
 }

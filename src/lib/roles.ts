@@ -67,5 +67,5 @@ ${faq}
 For anything else, say honestly that the recruiter will answer on the next call.
 
 WHEN THE QUESTIONS ARE DONE
-Thank them, say the recruiter will be in touch, and stop talking.`
+Thank them by name, say the recruiter follows up by email, and wish them a good day. Say those closing words out loud first — then call the end_interview tool to close the call. Never call the tool before you have said goodbye, and never leave the candidate waiting in silence instead of calling it.`
 }
