@@ -45,6 +45,7 @@ async function ask<T>(prompt: string, schema: z.ZodType<T>, name: string): Promi
 export async function buildCard(input: {
   turns: Turn[]
   roleId: string
+  usedPushToTalk?: boolean
 }): Promise<{ card: Card; metrics: Metrics }> {
   const { turns } = input
   if (!turns.some((t) => t.speaker === 'candidate')) {
@@ -52,6 +53,7 @@ export async function buildCard(input: {
   }
 
   const role = loadRole(input.roleId)
+  const usedPushToTalk = input.usedPushToTalk === true
   const metrics = computeMetrics(turns)
   const transcript = renderTranscript(turns)
 
@@ -66,7 +68,7 @@ export async function buildCard(input: {
   const [rawStructure, rawLanguage, rawDelivery, rawFacts, rawCuriosity] = await Promise.all([
     ask(structurePrompt(role, transcript), StructureResult, 'structure_analysis'),
     enough ? ask(languagePrompt(transcript, role.minutes), LanguageResult, 'language_analysis') : null,
-    enough ? ask(deliveryPrompt(transcript, metrics), DeliveryResult, 'delivery_analysis') : null,
+    enough ? ask(deliveryPrompt(transcript, metrics, usedPushToTalk), DeliveryResult, 'delivery_analysis') : null,
     ask(factsPrompt(role, transcript), FactsResult, 'facts_extraction'),
     // Не зависит от объёма речи: вопрос кандидата — это вопрос, сколько бы он ни говорил.
     ask(curiosityPrompt(transcript), CuriosityResult, 'candidate_questions'),

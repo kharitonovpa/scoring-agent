@@ -40,6 +40,13 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
           {roleTitle(session.roleId)} · {new Date(session.startedAt).toLocaleString('ru-RU')}
           {minutes !== null && ` · ${minutes} мин`} · {STATUS[session.status] ?? session.status}
         </p>
+        {session.usedPushToTalk && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
+            Кандидат пользовался режимом рации: микрофон был открыт только пока он держал кнопку.
+            Паузы в записи — свойство интерфейса, а не человека, поэтому выводы о манере речи по
+            этому разговору не делаются.
+          </p>
+        )}
         {session.status === 'interrupted' && (
           <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
             Разговор прервался до конца. Карточка построена по тому, что успело прозвучать — не все

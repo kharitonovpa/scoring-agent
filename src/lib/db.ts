@@ -28,6 +28,7 @@ type Row = {
   audio_chunks: string[]
   audio_url: string | null
   audio_offset_sec: number | null
+  used_push_to_talk: boolean | null
 }
 
 function toRecord(row: Row): SessionRecord {
@@ -45,6 +46,7 @@ function toRecord(row: Row): SessionRecord {
     audioChunks: row.audio_chunks ?? [],
     audioUrl: row.audio_url,
     audioOffsetSec: row.audio_offset_sec,
+    usedPushToTalk: row.used_push_to_talk ?? false,
   }
 }
 
@@ -85,11 +87,18 @@ export async function listSessions() {
 }
 
 /** Сдвиг записывается, только если передан: промежуточные сохранения его не затирают. */
-export async function saveTurns(id: string, turns: Turn[], audioOffsetSec?: number | null) {
+export async function saveTurns(
+  id: string,
+  turns: Turn[],
+  audioOffsetSec?: number | null,
+  usedPushToTalk?: boolean,
+) {
   await sql`
     UPDATE sessions
     SET transcript = ${JSON.stringify(turns)}::jsonb,
-        audio_offset_sec = COALESCE(${audioOffsetSec ?? null}, audio_offset_sec)
+        audio_offset_sec = COALESCE(${audioOffsetSec ?? null}, audio_offset_sec),
+        -- Один раз включённая рация остаётся отмеченной до конца разговора.
+        used_push_to_talk = used_push_to_talk OR ${usedPushToTalk ?? false}
     WHERE id = ${id}
   `
 }

@@ -18,6 +18,8 @@ export default function InterviewPage() {
     turns,
     sessionId,
     muted,
+    pushToTalk,
+    talking,
     questionId,
     nearingLimit,
     ranOutOfTime,
@@ -25,6 +27,9 @@ export default function InterviewPage() {
     confirmDone,
     dismissDonePrompt,
     toggleMute,
+    togglePushToTalk,
+    holdStart,
+    holdEnd,
     start,
     end,
   } = useInterview()
@@ -82,6 +87,11 @@ export default function InterviewPage() {
       muted={muted}
       questionId={questionId}
       nearingLimit={nearingLimit}
+      pushToTalk={pushToTalk}
+      talking={talking}
+      onTogglePushToTalk={togglePushToTalk}
+      onHoldStart={holdStart}
+      onHoldEnd={holdEnd}
       doneIn={doneIn}
       onConfirmDone={confirmDone}
       onDismissDone={dismissDonePrompt}

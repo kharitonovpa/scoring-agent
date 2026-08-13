@@ -34,13 +34,18 @@ describe('POST /api/turns', () => {
     const res = await post({ sessionId: 's1', turns: [turn] })
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ saved: 1 })
-    expect(saveTurns).toHaveBeenCalledWith('s1', [turn], null)
+    expect(saveTurns).toHaveBeenCalledWith('s1', [turn], null, false)
     expect(finishSession).not.toHaveBeenCalled()
   })
 
   it('сохраняет калибровку записи, когда клиент её прислал', async () => {
     await post({ sessionId: 's1', turns: [turn], audioOffsetSec: 1.25 })
-    expect(saveTurns).toHaveBeenCalledWith('s1', [turn], 1.25)
+    expect(saveTurns).toHaveBeenCalledWith('s1', [turn], 1.25, false)
+  })
+
+  it('запоминает, что кандидат пользовался рацией', async () => {
+    await post({ sessionId: 's1', turns: [turn], usedPushToTalk: true })
+    expect(saveTurns).toHaveBeenCalledWith('s1', [turn], null, true)
   })
 
   it('закрывает сессию и сам запускает анализ при done', async () => {

@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     done?: boolean
     status?: string
     audioOffsetSec?: number | null
+    usedPushToTalk?: boolean
   }
   try {
     payload = await req.json()
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
 
   const turns = payload.turns as Turn[]
   const audioOffsetSec = typeof payload.audioOffsetSec === 'number' ? payload.audioOffsetSec : null
-  await saveTurns(sessionId, turns, audioOffsetSec)
+  await saveTurns(sessionId, turns, audioOffsetSec, payload.usedPushToTalk === true)
 
   if (!payload.done) return Response.json({ saved: turns.length })
 

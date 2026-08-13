@@ -111,6 +111,8 @@ export type SessionRecord = {
   startedAt: string
   endedAt: string | null
   transcript: Turn[]
+  /** Пользовался ли кандидат режимом рации: меняет условия наблюдения за манерой речи. */
+  usedPushToTalk: boolean
   metrics: Metrics | null
   card: Card | null
   /** Сырые чанки записи по порядку. */

@@ -92,3 +92,15 @@ describe('обрывки помечены в транскрипте', () => {
     expect(text).not.toMatch(/MICROPHONE NOISE/)
   })
 })
+
+describe('режим рации меняет условия наблюдения', () => {
+  it('без рации промпт манеры не содержит оговорки', () => {
+    expect(deliveryPrompt('x', metrics)).not.toMatch(/push-to-talk/i)
+  })
+
+  it('с рацией запрещает выводы по паузам и по времени', () => {
+    const prompt = deliveryPrompt('x', metrics, true)
+    expect(prompt).toMatch(/push-to-talk/i)
+    expect(prompt).toMatch(/Do not report any signal that relies on pauses/)
+  })
+})

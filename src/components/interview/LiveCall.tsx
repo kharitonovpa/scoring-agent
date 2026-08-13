@@ -11,6 +11,11 @@ export function LiveCall({
   muted,
   questionId,
   nearingLimit,
+  pushToTalk,
+  talking,
+  onTogglePushToTalk,
+  onHoldStart,
+  onHoldEnd,
   doneIn,
   onConfirmDone,
   onDismissDone,
@@ -21,6 +26,11 @@ export function LiveCall({
   muted: boolean
   questionId: string | null
   nearingLimit: boolean
+  pushToTalk: boolean
+  talking: boolean
+  onTogglePushToTalk: () => void
+  onHoldStart: () => void
+  onHoldEnd: () => void
   doneIn: number | null
   onConfirmDone: () => void
   onDismissDone: () => void
@@ -100,7 +110,30 @@ export function LiveCall({
       </ul>
       <div ref={tail} />
 
+      {pushToTalk && (
+        <div className="surface p-5 text-center">
+          <button
+            onPointerDown={onHoldStart}
+            onPointerUp={onHoldEnd}
+            onPointerLeave={onHoldEnd}
+            onPointerCancel={onHoldEnd}
+            className={`btn w-full py-6 text-base ${talking ? 'btn-primary' : 'btn-quiet'}`}
+          >
+            {talking ? '● Speaking — release when you are done' : 'Hold to speak'}
+          </button>
+          <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+            The microphone is closed until you hold the button, so nothing around you is picked up.
+            Release when you have finished your answer.
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-3 border-t border-line pt-6">
+        <button onClick={onTogglePushToTalk} className="btn btn-quiet">
+          <span aria-hidden>🎚</span>
+          {pushToTalk ? 'Back to hands-free' : 'Noisy around? Hold to talk'}
+        </button>
+        {!pushToTalk && (
         <button
           onClick={onToggleMute}
           aria-pressed={muted}
@@ -109,6 +142,7 @@ export function LiveCall({
           <span aria-hidden>{muted ? '🎙' : '🔇'}</span>
           {muted ? 'Turn the microphone on' : 'Mute the microphone'}
         </button>
+        )}
         <button onClick={onEnd} className="btn btn-quiet">
           End the interview
         </button>

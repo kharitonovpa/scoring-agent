@@ -20,4 +20,7 @@ await sql`
   )
 `
 
+// Отдельным шагом, чтобы поле появилось и на уже существующей таблице.
+await sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS used_push_to_talk boolean NOT NULL DEFAULT false`
+
 console.log('schema ready')

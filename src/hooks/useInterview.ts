@@ -69,6 +69,14 @@ export function useInterview() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [muted, setMuted] = useState(false)
+  /**
+   * Рация. По умолчанию выключена: свободный разговор — это то, ради чего продукт
+   * существует. Включается кандидатом, когда вокруг шумно, и тогда сессия помечается —
+   * условия наблюдения за манерой речи изменились, и карточка обязана это показать.
+   */
+  const [pushToTalk, setPushToTalk] = useState(false)
+  const [talking, setTalking] = useState(false)
+  const usedPushToTalk = useRef(false)
   const [nearingLimit, setNearingLimit] = useState(false)
   const [ranOutOfTime, setRanOutOfTime] = useState(false)
   const [questionId, setQuestionId] = useState<string | null>(null)
@@ -158,7 +166,7 @@ export function useInterview() {
   }, [clearDonePrompt])
 
   const armDonePrompt = useCallback(() => {
-    if (dismissed.current || ended.current || farewellSent.current) return
+    if (dismissed.current || ended.current || farewellSent.current || pushToTalk) return
     clearDonePrompt()
     promptTimer.current = setTimeout(() => {
       let left = Math.round(AUTO_CONFIRM_MS / 1000)
@@ -169,7 +177,39 @@ export function useInterview() {
         else setDoneIn(left)
       }, 1000)
     }, SILENCE_BEFORE_PROMPT_MS)
-  }, [clearDonePrompt, confirmDone])
+  }, [clearDonePrompt, confirmDone, pushToTalk])
+
+  const setMicEnabled = useCallback((on: boolean) => {
+    mic.current?.getAudioTracks().forEach((t) => (t.enabled = on))
+  }, [])
+
+  const togglePushToTalk = useCallback(() => {
+    setPushToTalk((was) => {
+      const next = !was
+      if (next) usedPushToTalk.current = true
+      // Вне режима рации микрофон открыт всегда; в режиме — закрыт, пока не держат.
+      setMicEnabled(!next)
+      setTalking(false)
+      return next
+    })
+  }, [setMicEnabled])
+
+  /** Нажал — микрофон открылся. Отпустил — закрылся и реплика сразу уходит агенту. */
+  const holdStart = useCallback(() => {
+    if (!pushToTalk || ended.current) return
+    setTalking(true)
+    setMicEnabled(true)
+  }, [pushToTalk, setMicEnabled])
+
+  const holdEnd = useCallback(() => {
+    if (!pushToTalk) return
+    setTalking(false)
+    setMicEnabled(false)
+    clearDonePrompt()
+    // Кандидат сам обозначил конец реплики — гадать по тишине больше не нужно.
+    sendToAgent.current?.({ type: 'input_audio_buffer.commit' })
+    sendToAgent.current?.({ type: 'response.create' })
+  }, [clearDonePrompt, pushToTalk, setMicEnabled])
 
   const persist = useCallback(
     async (done: boolean, status?: 'interrupted', viaBeacon = false) => {
@@ -179,6 +219,7 @@ export function useInterview() {
         sessionId: id,
         turns: assembleTurns(events.current),
         audioOffsetSec: audioOffset(),
+        usedPushToTalk: usedPushToTalk.current,
         done,
         status,
       })
@@ -364,6 +405,8 @@ export function useInterview() {
     turns,
     sessionId,
     muted,
+    pushToTalk,
+    talking,
     questionId,
     nearingLimit,
     doneIn,
@@ -371,6 +414,9 @@ export function useInterview() {
     dismissDonePrompt,
     ranOutOfTime,
     toggleMute,
+    togglePushToTalk,
+    holdStart,
+    holdEnd,
     start,
     end,
   }

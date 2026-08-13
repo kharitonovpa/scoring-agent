@@ -19,6 +19,7 @@ export async function runAnalysis(sessionId: string): Promise<{ droppedClaims: n
     const { card, metrics } = await buildCard({
       turns: session.transcript,
       roleId: session.roleId,
+      usedPushToTalk: session.usedPushToTalk,
     })
     await saveAnalysis(sessionId, metrics, card)
     return { droppedClaims: card.droppedClaims }

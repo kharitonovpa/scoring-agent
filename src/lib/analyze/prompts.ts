@@ -78,11 +78,22 @@ TRANSCRIPT
 ${transcript}`
 }
 
-export function deliveryPrompt(transcript: string, metrics: Metrics): string {
+export function deliveryPrompt(
+  transcript: string,
+  metrics: Metrics,
+  usedPushToTalk = false,
+): string {
   const pauses = metrics.pauses.map((p) => `${p.turnId}: ${p.pauseSec}s`).join(', ') || 'none recorded'
+  // Рация меняет условия наблюдения: микрофон открыт только пока кандидат держит кнопку,
+  // поэтому пауз «между» репликами в записи нет, а время на обдумывание не видно вовсе.
+  // Делать по такому материалу выводы о подготовленности нельзя.
+  const pushToTalkNotice = usedPushToTalk
+    ? `\n\nIMPORTANT — THE OBSERVING CONDITIONS WERE DIFFERENT IN THIS CALL\nThe candidate used push-to-talk: the microphone was open only while they held a button, so silence between turns is an artefact of the interface and not of the person. You cannot tell from this recording whether they paused to think, looked something up, or prepared an answer. Do not report any signal that relies on pauses, hesitation or timing. Report only what the words themselves show, and if that leaves nothing, report no signals.`
+    : ''
+
   return `You help a recruiter notice whether a candidate was speaking freely or delivering something prepared in advance.
 
-${GROUND_RULES}
+${GROUND_RULES}${pushToTalkNotice}
 
 You are NOT deciding anything. You surface signals worth listening to, each with a confidence level and a concrete "what to check" note for the recruiter.
 
