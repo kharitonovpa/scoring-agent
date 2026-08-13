@@ -11,7 +11,7 @@
  * Запуск: npm run probe
  */
 import { writeFileSync } from 'node:fs'
-import { useProxyIfConfigured } from '../src/lib/proxy.ts'
+import { configureProxyFromEnv } from '../src/lib/proxy.ts'
 
 const KEY = process.env.OPENAI_API_KEY
 if (!KEY) {
@@ -19,7 +19,7 @@ if (!KEY) {
   process.exit(1)
 }
 
-await useProxyIfConfigured((m) => console.log(`· ${m}`))
+await configureProxyFromEnv((m) => console.log(`· ${m}`))
 
 const SAMPLE_RATE = 24_000
 const SPEECH = [

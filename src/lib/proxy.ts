@@ -5,7 +5,7 @@
  *
  * На проде переменной нет, и весь модуль остаётся бездействующим: undici не грузится.
  */
-export async function useProxyIfConfigured(log: (m: string) => void = console.log) {
+export async function configureProxyFromEnv(log: (m: string) => void = console.log) {
   const proxy =
     process.env.HTTPS_PROXY ??
     process.env.https_proxy ??

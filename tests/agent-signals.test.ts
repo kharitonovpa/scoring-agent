@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isEndInterviewCall } from '@/lib/agent-signals'
+import { FAREWELL_INSTRUCTIONS, farewellRequest, isEndInterviewCall, readSpeechState } from '@/lib/agent-signals'
 import { buildSessionConfig } from '@/lib/realtime-session'
 
 describe('isEndInterviewCall', () => {
@@ -54,5 +54,41 @@ describe('конфиг сессии', () => {
   it('велит прощаться вслух до вызова инструмента', () => {
     expect(config.instructions).toMatch(/closing words out loud first/)
     expect(config.instructions).toMatch(/end_interview/)
+  })
+})
+
+describe('состояние речи кандидата', () => {
+  it('различает начало и конец речи', () => {
+    expect(readSpeechState({ type: 'input_audio_buffer.speech_started' })).toBe('started')
+    expect(readSpeechState({ type: 'input_audio_buffer.speech_stopped' })).toBe('stopped')
+  })
+
+  it('на прочих событиях молчит, чтобы не сбить состояние', () => {
+    for (const type of ['response.done', 'conversation.item.added', 'session.updated']) {
+      expect(readSpeechState({ type })).toBeNull()
+    }
+  })
+})
+
+describe('просьба попрощаться', () => {
+  it('переопределяет инструкции только на один ответ', () => {
+    const request = farewellRequest()
+    expect(request.type).toBe('response.create')
+    expect(request.response.instructions).toBe(FAREWELL_INSTRUCTIONS)
+  })
+
+  it('велит сначала отозваться на сказанное, потом прощаться, потом закрыть звонок', () => {
+    const order = ['react in one short sentence', 'thank them by name', 'end_interview']
+    let at = -1
+    for (const fragment of order) {
+      const next = FAREWELL_INSTRUCTIONS.indexOf(fragment)
+      expect(next, fragment).toBeGreaterThan(at)
+      at = next
+    }
+  })
+
+  it('запрещает новые вопросы и упоминание лимитов вслух', () => {
+    expect(FAREWELL_INSTRUCTIONS).toMatch(/Do not ask another question/)
+    expect(FAREWELL_INSTRUCTIONS).toMatch(/Never mention time limits/)
   })
 })

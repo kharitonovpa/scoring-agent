@@ -1,6 +1,11 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { isEndInterviewCall, readQuestionStarted } from '@/lib/agent-signals'
+import {
+  farewellRequest,
+  isEndInterviewCall,
+  readQuestionStarted,
+  readSpeechState,
+} from '@/lib/agent-signals'
 import { connectRealtime } from '@/lib/realtime-client'
 import { loadRole } from '@/lib/roles'
 import { InterviewRecorder } from '@/lib/recorder'
@@ -25,9 +30,15 @@ const MAX_INTERVIEW_MS = loadRole('unimatch-default').minutes * 2 * 60 * 1000
  * осталось» лучше, структурой разговора.
  *
  * Но молча обрывать разговор нельзя: для кандидата это выглядит как сбой по его вине.
- * За четверть потолка до конца показываем спокойное предупреждение.
+ * Поэтому в момент, когда агента просят сворачиваться, кандидат видит спокойную плашку.
  */
-const WARN_BEFORE_MS = MAX_INTERVIEW_MS * 0.25
+
+/**
+ * Когда просим агента свернуть разговор. Раньше жёсткого потолка с большим запасом: у него
+ * должно остаться время договорить по-человечески, а обрыв соединения остаётся крайней
+ * мерой на случай, если агент почему-то не послушался.
+ */
+const WRAP_UP_MS = loadRole('unimatch-default').minutes * 1.3 * 60 * 1000
 
 // Событие о конце генерации приходит раньше, чем доиграет уже отправленный звук. Рвать
 // соединение сразу — значит обрубить агенту прощание на полуслове.
@@ -52,6 +63,11 @@ export function useInterview() {
   const flusher = useRef<ReturnType<typeof setInterval> | null>(null)
   const deadline = useRef<ReturnType<typeof setTimeout> | null>(null)
   const warning = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wrapUp = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sendToAgent = useRef<((m: unknown) => boolean) | null>(null)
+  const candidateSpeaking = useRef(false)
+  const farewellPending = useRef(false)
+  const farewellSent = useRef(false)
   const sessionRef = useRef<string | null>(null)
   const ended = useRef(false)
   const closing = useRef(false)
@@ -77,6 +93,21 @@ export function useInterview() {
       tracks.forEach((t) => (t.enabled = !next))
       return next
     })
+  }, [])
+
+  /**
+   * Просим агента закончить разговор. Если кандидат говорит прямо сейчас — ждём, пока он
+   * замолчит: влезть с прощанием в середину фразы хуже, чем закончить на минуту позже.
+   * Если молчит — прощаемся сразу, тянуть незачем.
+   */
+  const askToWrapUp = useCallback(() => {
+    if (farewellSent.current || ended.current) return
+    if (candidateSpeaking.current) {
+      farewellPending.current = true
+      return
+    }
+    farewellPending.current = false
+    farewellSent.current = sendToAgent.current?.(farewellRequest()) ?? false
   }, [])
 
   const persist = useCallback(
@@ -116,6 +147,7 @@ export function useInterview() {
       if (flusher.current) clearInterval(flusher.current)
       if (deadline.current) clearTimeout(deadline.current)
       if (warning.current) clearTimeout(warning.current)
+      if (wrapUp.current) clearTimeout(wrapUp.current)
       pc.current?.close()
       mic.current?.getTracks().forEach((t) => t.stop())
 
@@ -169,6 +201,13 @@ export function useInterview() {
             const started = readQuestionStarted(event)
             if (started) setQuestionId(started)
 
+            const speech = readSpeechState(event)
+            if (speech) {
+              candidateSpeaking.current = speech === 'started'
+              // Кандидат договорил — теперь прощание никого не перебьёт.
+              if (speech === 'stopped' && farewellPending.current) askToWrapUp()
+            }
+
             // Агент отработал все вопросы и попрощался — закрываем разговор за него,
             // дав прощанию доиграть. Кандидат не должен гадать, кончилось ли интервью.
             if (isEndInterviewCall(event)) closing.current = true
@@ -192,6 +231,7 @@ export function useInterview() {
           },
         })
         pc.current = conn.pc
+        sendToAgent.current = conn.send
 
         conn.pc.onconnectionstatechange = () => {
           if (
@@ -203,7 +243,8 @@ export function useInterview() {
         }
 
         flusher.current = setInterval(() => void persist(false), FLUSH_MS)
-        warning.current = setTimeout(() => setNearingLimit(true), MAX_INTERVIEW_MS - WARN_BEFORE_MS)
+        warning.current = setTimeout(() => setNearingLimit(true), WRAP_UP_MS)
+        wrapUp.current = setTimeout(askToWrapUp, WRAP_UP_MS)
         // Забытая открытая вкладка не должна жечь квоту: разговор всё равно закончится.
         deadline.current = setTimeout(() => {
           setRanOutOfTime(true)
@@ -215,7 +256,7 @@ export function useInterview() {
         setPhase('error')
       }
     },
-    [end, persist],
+    [askToWrapUp, end, persist],
   )
 
   useEffect(() => {

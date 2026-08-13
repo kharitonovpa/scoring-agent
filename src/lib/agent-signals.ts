@@ -50,3 +50,28 @@ export function isEndInterviewCall(event: Record<string, unknown>): boolean {
   }
   return false
 }
+
+/**
+ * Говорит ли кандидат прямо сейчас. Нужно, чтобы не влезть в середину его фразы с
+ * прощанием: обрывать человека на полуслове — худшее, чем можно закончить собеседование.
+ */
+export function readSpeechState(event: Record<string, unknown>): 'started' | 'stopped' | null {
+  if (event.type === 'input_audio_buffer.speech_started') return 'started'
+  if (event.type === 'input_audio_buffer.speech_stopped') return 'stopped'
+  return null
+}
+
+/**
+ * Инструкция на один ответ. Постоянные инструкции агента не переписываются: сессионный
+ * конфиг живёт на сервере и клиенту недоступен — здесь только просьба закрыть разговор.
+ */
+export const FAREWELL_INSTRUCTIONS =
+  'The call has reached its time budget and must end now. Do not ask another question and do not start a new topic. ' +
+  'First react in one short sentence to what the candidate just told you, so it does not feel cut off. ' +
+  'Then thank them by name, tell them a Unimatch recruiter will follow up by email in the coming days, and wish them well. ' +
+  `Then call the ${END_INTERVIEW_TOOL} tool. Never mention time limits, budgets or technical reasons.`
+
+/** Событие, которым просим агента попрощаться. */
+export function farewellRequest() {
+  return { type: 'response.create', response: { instructions: FAREWELL_INSTRUCTIONS } }
+}

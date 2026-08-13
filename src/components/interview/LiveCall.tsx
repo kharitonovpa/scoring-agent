@@ -57,8 +57,8 @@ export function LiveCall({
           а секунды на экране заставляют торопиться. */}
       {nearingLimit && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
-          We are coming up on the time limit for this call. Finish the thought you are on — the
-          recruiter will have everything they need.
+          We are close to the end of the call. Finish the thought you are on — the recruiter will
+          wrap up and say goodbye in a moment, and they already have everything they need.
         </p>
       )}
 

@@ -38,5 +38,14 @@ export async function connectRealtime(opts: {
   }
 
   await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() })
-  return { pc, callId: res.headers.get('X-Call-Id') || null }
+
+  // Отправка наружу нужна, чтобы попросить агента свернуть разговор. Канал может быть
+  // ещё не открыт или уже закрыт — молча пропускаем, ронять интервью из-за этого нельзя.
+  const send = (message: unknown) => {
+    if (channel.readyState !== 'open') return false
+    channel.send(JSON.stringify(message))
+    return true
+  }
+
+  return { pc, send, callId: res.headers.get('X-Call-Id') || null }
 }

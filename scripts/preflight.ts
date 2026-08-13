@@ -3,7 +3,7 @@
  * потратим время на живое интервью. Запуск: npm run preflight
  */
 
-import { useProxyIfConfigured } from '../src/lib/proxy.ts'
+import { configureProxyFromEnv } from '../src/lib/proxy.ts'
 
 const KEY = process.env.OPENAI_API_KEY
 if (!KEY) {
@@ -11,7 +11,7 @@ if (!KEY) {
   process.exit(1)
 }
 
-await useProxyIfConfigured((m) => console.log(`· ${m}`))
+await configureProxyFromEnv((m) => console.log(`· ${m}`))
 
 const ok = (m: string) => console.log(`✓ ${m}`)
 const bad = (m: string) => console.log(`✗ ${m}`)
