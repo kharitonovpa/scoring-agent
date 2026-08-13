@@ -92,4 +92,19 @@ describe('POST /api/realtime/call', () => {
     expect((await post(OFFER, null)).status).toBe(400)
     expect((await post('{"not":"sdp"}')).status).toBe(400)
   })
+
+  it('звук не перебивает агента: вопрос доходит до конца', async () => {
+    await post()
+    const config = JSON.parse(sentForm().get('session') as string)
+    // Иначе вздох или щелчок на середине вопроса обрывают его, и кандидат
+    // не слышит, о чём спросили.
+    expect(config.audio.input.turn_detection.interrupt_response).toBe(false)
+    expect(config.audio.input.turn_detection.eagerness).toBe('low')
+  })
+
+  it('язык распознавания задан жёстко', async () => {
+    await post()
+    const config = JSON.parse(sentForm().get('session') as string)
+    expect(config.audio.input.transcription.language).toBe('en')
+  })
 })

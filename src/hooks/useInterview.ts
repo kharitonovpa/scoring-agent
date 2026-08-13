@@ -38,6 +38,13 @@ const MAX_INTERVIEW_MS = loadRole('unimatch-default').minutes * 2 * 60 * 1000
  * должно остаться время договорить по-человечески, а обрыв соединения остаётся крайней
  * мерой на случай, если агент почему-то не послушался.
  */
+/**
+ * Агента нельзя перебить (interrupt_response: false), и у этого есть цена: если кандидат
+ * ответил, пока агент ещё говорил, сервер может не создать реплику на его ответ — тогда
+ * разговор встанет в тишине. Ждём столько и, если ответа нет, просим сами.
+ */
+const RESPONSE_WATCHDOG_MS = 2000
+
 const WRAP_UP_MS = loadRole('unimatch-default').minutes * 1.3 * 60 * 1000
 
 // Событие о конце генерации приходит раньше, чем доиграет уже отправленный звук. Рвать
@@ -68,6 +75,7 @@ export function useInterview() {
   const candidateSpeaking = useRef(false)
   const farewellPending = useRef(false)
   const farewellSent = useRef(false)
+  const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionRef = useRef<string | null>(null)
   const ended = useRef(false)
   const closing = useRef(false)
@@ -148,6 +156,7 @@ export function useInterview() {
       if (deadline.current) clearTimeout(deadline.current)
       if (warning.current) clearTimeout(warning.current)
       if (wrapUp.current) clearTimeout(wrapUp.current)
+      if (watchdog.current) clearTimeout(watchdog.current)
       pc.current?.close()
       mic.current?.getTracks().forEach((t) => t.stop())
 
@@ -209,8 +218,22 @@ export function useInterview() {
             const speech = readSpeechState(event)
             if (speech) {
               candidateSpeaking.current = speech === 'started'
-              // Кандидат договорил — теперь прощание никого не перебьёт.
-              if (speech === 'stopped' && farewellPending.current) askToWrapUp()
+              if (speech === 'stopped') {
+                // Кандидат договорил — теперь прощание никого не перебьёт.
+                if (farewellPending.current) askToWrapUp()
+                // И проверяем, что агент вообще собрался отвечать.
+                if (watchdog.current) clearTimeout(watchdog.current)
+                watchdog.current = setTimeout(() => {
+                  if (ended.current || farewellSent.current) return
+                  sendToAgent.current?.({ type: 'response.create' })
+                }, RESPONSE_WATCHDOG_MS)
+              }
+            }
+
+            // Агент заговорил сам — страховка не нужна.
+            if (event.type === 'response.created' && watchdog.current) {
+              clearTimeout(watchdog.current)
+              watchdog.current = null
             }
 
             // Агент отработал все вопросы и попрощался — закрываем разговор за него,
