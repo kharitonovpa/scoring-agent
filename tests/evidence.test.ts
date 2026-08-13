@@ -84,3 +84,27 @@ describe('keepSupported', () => {
     expect(result.dropped).toBe(0)
   })
 })
+
+describe('шум не может быть доказательством', () => {
+  const turns = [
+    { id: 'noise', speaker: 'candidate', text: 'Акендеген туды.', tStart: 10, tEnd: 10.2, timingSource: 'server' },
+    { id: 'short', speaker: 'candidate', text: 'Yes.', tStart: 20, tEnd: 20.6, timingSource: 'server' },
+  ] as Turn[]
+
+  it('обрывок короче порога опорой не становится', () => {
+    expect(validateEvidence([{ turnId: 'noise', quote: 'Акендеген туды' }], turns)).toEqual([])
+  })
+
+  it('короткий, но настоящий ответ остаётся полноценной опорой', () => {
+    expect(validateEvidence([{ turnId: 'short', quote: 'Yes' }], turns)).toHaveLength(1)
+  })
+
+  it('утверждение, опиравшееся только на шум, выбрасывается и попадает в счёт', () => {
+    const { kept, dropped } = keepSupported(
+      [{ evidence: [{ turnId: 'noise', quote: 'Акендеген туды' }] }],
+      turns,
+    )
+    expect(kept).toEqual([])
+    expect(dropped).toBe(1)
+  })
+})

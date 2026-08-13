@@ -14,7 +14,10 @@ export function buildSessionConfig(roleId: string, candidateName: string) {
     instructions: `${buildInstructions(role)}\n\nThe candidate's name is ${candidateName}.`,
     audio: {
       input: {
-        transcription: { model: 'gpt-4o-transcribe' },
+        // Язык задан жёстко. Без него распознаватель определяет язык сам и на шорохах
+        // выдаёт текст на случайном языке — в карточку попадали строки кириллицей,
+        // которых кандидат не произносил. Интервью английское, догадки здесь не нужны.
+        transcription: { model: 'gpt-4o-transcribe', language: 'en' },
         turn_detection: { type: 'semantic_vad', eagerness: 'low' },
       },
       output: { voice: 'marin' },

@@ -121,7 +121,12 @@ export function useInterview() {
         sessionRef.current = data.sessionId
         setSessionId(data.sessionId)
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        // Подавление шума включаем явно: по умолчанию браузеры ведут себя по-разному, а
+        // чувствительный микрофон превращает шорохи и дыхание в отдельные реплики, на
+        // которых агент теряет вопрос.
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
+        })
         mic.current = stream
 
         recorder.current = new InterviewRecorder(data.sessionId)
