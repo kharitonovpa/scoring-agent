@@ -1,11 +1,6 @@
+import type { Turn } from '@/lib/types'
 import { describe, expect, it } from 'vitest'
-import {
-  deliveryPrompt,
-  factsPrompt,
-  languagePrompt,
-  renderTranscript,
-  structurePrompt,
-} from '@/lib/analyze/prompts'
+import { deliveryPrompt, factsPrompt, languagePrompt, renderTranscript, structurePrompt } from '@/lib/analyze/prompts'
 import { loadRole } from '@/lib/roles'
 import type { Metrics, Turn } from '@/lib/types'
 
@@ -77,5 +72,25 @@ describe('промпты', () => {
     const prompt = deliveryPrompt('x', metrics)
     expect(prompt).toMatch(/pause/i)
     expect(prompt).toMatch(/never treat a pause/i)
+  })
+})
+
+describe('обрывки помечены в транскрипте', () => {
+  const turn = (id: string, tStart: number, tEnd: number, text: string, speaker = 'candidate') =>
+    ({ id, speaker, text, tStart, tEnd, timingSource: 'server' }) as Turn
+
+  it('короткая реплика кандидата помечена как шум', () => {
+    const text = renderTranscript([turn('c1', 10, 10.2, 'Uh')])
+    expect(text).toMatch(/MICROPHONE NOISE/)
+  })
+
+  it('полноценная реплика не помечена', () => {
+    const text = renderTranscript([turn('c2', 10, 25, 'I worked at an education agency')])
+    expect(text).not.toMatch(/MICROPHONE NOISE/)
+  })
+
+  it('реплики агента не помечаются никогда', () => {
+    const text = renderTranscript([turn('a1', 10, 10.1, 'Ok', 'agent')])
+    expect(text).not.toMatch(/MICROPHONE NOISE/)
   })
 })

@@ -21,6 +21,18 @@ export function affectsTurns(event: Record<string, unknown>): boolean {
   return typeof event.type === 'string' && TURN_EVENT_TYPES.has(event.type)
 }
 
+/**
+ * Распознаватель обязан выдать текст на каждый всплеск звука, а в шорохе, кашле или
+ * задетом микрофоне слов нет — выходит «.» или «?». Реплика без единой буквы и цифры
+ * репликой не является: кандидат такого не говорил.
+ *
+ * Убирать это надо здесь, а не только в проверке цитат: иначе мусор попадает в промпты
+ * как речь кандидата и тянет вниз оценку связности.
+ */
+function hasWords(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text)
+}
+
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
 const num = (v: unknown) => (typeof v === 'number' ? v : undefined)
 
@@ -67,7 +79,7 @@ export function assembleTurns(events: StampedEvent[]): Turn[] {
     if (!isCandidate && !isAgent) continue
 
     const text = (str(event.transcript) ?? '').trim()
-    if (!text) continue
+    if (!hasWords(text)) continue
 
     const timing = isCandidate ? timings.get(itemId) : undefined
     const hasServerTiming = timing?.tStart !== undefined

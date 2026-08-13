@@ -161,3 +161,26 @@ describe('какие события пересобирают транскрип�
     expect(TURN_EVENT_TYPES.size).toBe(4)
   })
 })
+
+describe('шорох не становится репликой', () => {
+  const noise = (id: string, transcript: string) => ({
+    clientTimeSec: 1,
+    event: {
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: id,
+      transcript,
+    },
+  })
+
+  it('текст без единой буквы и цифры отбрасывается', () => {
+    for (const text of ['.', '..', '?', '!', '. . .', '—', ' ']) {
+      expect(assembleTurns([noise('n', text)]), text).toEqual([])
+    }
+  })
+
+  it('короткий, но настоящий ответ остаётся репликой', () => {
+    for (const text of ['Yes.', 'Ja.', '2025', 'Ok']) {
+      expect(assembleTurns([noise('c', text)]), text).toHaveLength(1)
+    }
+  })
+})

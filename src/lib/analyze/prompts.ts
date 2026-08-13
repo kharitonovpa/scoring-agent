@@ -1,3 +1,4 @@
+import { MIN_EVIDENCE_TURN_SEC } from '../evidence'
 import type { RoleConfig } from '../roles'
 import type { Metrics, Turn } from '../types'
 
@@ -14,12 +15,20 @@ HOW TO WRITE
 - Never write turn ids such as [item_ABC123] inside prose. Ids belong only in the evidence fields. The recruiter never sees them and they make the text unreadable.
 - Never describe your own output: no mentions of fields, arrays, schemas, criteria or "the required format". Write as if dictating notes to a colleague who will never see the machinery.`
 
+/**
+ * Обрывки короче порога помечаются прямо в транскрипте. Без пометки модель считает их
+ * репликами кандидата и делает вывод о рваной речи там, где человек просто кашлянул.
+ */
 export function renderTranscript(turns: Turn[]): string {
   return turns
-    .map(
-      (t) =>
-        `[${t.id}] ${t.speaker === 'agent' ? 'RECRUITER' : 'CANDIDATE'} (${t.tStart.toFixed(1)}s–${t.tEnd.toFixed(1)}s): ${t.text}`,
-    )
+    .map((t) => {
+      const who = t.speaker === 'agent' ? 'RECRUITER' : 'CANDIDATE'
+      const fragment =
+        t.speaker === 'candidate' && t.tEnd - t.tStart < MIN_EVIDENCE_TURN_SEC
+          ? ' [MICROPHONE NOISE, NOT SPEECH — ignore entirely]'
+          : ''
+      return `[${t.id}] ${who}${fragment} (${t.tStart.toFixed(1)}s–${t.tEnd.toFixed(1)}s): ${t.text}`
+    })
     .join('\n')
 }
 
