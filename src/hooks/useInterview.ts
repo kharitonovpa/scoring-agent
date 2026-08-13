@@ -15,6 +15,7 @@ export function useInterview() {
   const [error, setError] = useState<string | null>(null)
   const [turns, setTurns] = useState<Turn[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [muted, setMuted] = useState(false)
 
   const events = useRef<StampedEvent[]>([])
   const pc = useRef<RTCPeerConnection | null>(null)
@@ -34,6 +35,21 @@ export function useInterview() {
         : computeAudioOffset(events.current, recordingStartSec.current),
     [],
   )
+
+  /**
+   * Глушим дорожку, а не останавливаем её: остановленную не вернуть без нового
+   * getUserMedia и пересогласования соединения. С `enabled = false` в эфир и в запись
+   * идёт тишина, а разговор продолжает жить.
+   */
+  const toggleMute = useCallback(() => {
+    const tracks = mic.current?.getAudioTracks() ?? []
+    if (!tracks.length) return
+    setMuted((was) => {
+      const next = !was
+      tracks.forEach((t) => (t.enabled = !next))
+      return next
+    })
+  }, [])
 
   const persist = useCallback(
     async (done: boolean, status?: 'interrupted', viaBeacon = false) => {
@@ -160,5 +176,5 @@ export function useInterview() {
     return () => window.removeEventListener('pagehide', onUnload)
   }, [persist])
 
-  return { phase, error, turns, sessionId, start, end }
+  return { phase, error, turns, sessionId, muted, toggleMute, start, end }
 }

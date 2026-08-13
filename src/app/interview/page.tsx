@@ -12,7 +12,7 @@ export default function InterviewPage() {
   const [step, setStep] = useState<Step>('consent')
   const [name, setName] = useState('')
   const [micError, setMicError] = useState<string | null>(null)
-  const { phase, error, turns, sessionId, start, end } = useInterview()
+  const { phase, error, turns, sessionId, muted, toggleMute, start, end } = useInterview()
 
   const problem = micError ?? error
   if (problem) {
@@ -59,5 +59,7 @@ export default function InterviewPage() {
     return <p className="mx-auto max-w-xl px-5 py-16 text-ink-soft sm:px-6">Connecting you to the recruiter…</p>
   }
 
-  return <LiveCall turns={turns} onEnd={() => void end()} />
+  return (
+    <LiveCall turns={turns} muted={muted} onToggleMute={toggleMute} onEnd={() => void end()} />
+  )
 }
