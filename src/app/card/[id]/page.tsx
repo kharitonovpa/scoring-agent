@@ -10,6 +10,7 @@ import { QuoteAudioProvider } from '@/components/card/QuoteAudioProvider'
 import { RetryAnalysis } from '@/components/card/RetryAnalysis'
 import { SummaryBlock } from '@/components/card/SummaryBlock'
 import { getSession } from '@/lib/db'
+import { roleTitle } from '@/lib/roles'
 
 const STATUS: Record<string, string> = {
   live: 'Интервью идёт прямо сейчас',
@@ -35,7 +36,7 @@ export default async function CardPage({ params }: { params: Promise<{ id: strin
       <header className="space-y-2 pb-1">
         <h1 className="text-[1.75rem] font-semibold tracking-tight">{session.candidateName}</h1>
         <p className="text-sm text-ink-soft">
-          {session.roleId} · {new Date(session.startedAt).toLocaleString('ru-RU')}
+          {roleTitle(session.roleId)} · {new Date(session.startedAt).toLocaleString('ru-RU')}
           {minutes !== null && ` · ${minutes} мин`} · {STATUS[session.status] ?? session.status}
         </p>
         {session.status === 'interrupted' && (

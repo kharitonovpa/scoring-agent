@@ -7,8 +7,8 @@ export function ThankYou({ sessionId }: { sessionId: string | null }) {
       </div>
       <h1 className="mt-6 text-[1.75rem] font-semibold tracking-tight">Thank you</h1>
       <p className="mx-auto mt-3 max-w-md leading-relaxed text-ink-soft">
-        That is the whole screening. A Unimatch recruiter reviews the conversation and follows up by
-        email.
+        That is the whole screening — you can close this page now. A Unimatch recruiter reads through
+        the conversation and gets back to you by email within a few working days, either way.
       </p>
       {demo && sessionId && (
         <p className="mt-10 rounded-card border border-dashed border-line-strong p-5 text-left text-sm leading-relaxed text-ink-soft">

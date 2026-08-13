@@ -7,23 +7,28 @@
     {
       "id": "location",
       "label": "Локация и право на работу",
-      "ask": "Where are you based right now, and are you legally allowed to work from there as a contractor?"
+      "ask": "Where are you based right now, and are you legally allowed to work from there as a contractor?",
+      "topic": "Where you are based and your right to work"
     },
     {
       "id": "experience",
       "label": "Опыт в домене + пример",
-      "ask": "Tell me about your experience working directly with clients or students. Then walk me through one specific case you handled yourself.",
-      "needsExample": true
+      "ask": "Tell me about your experience working directly with clients or students.",
+      "needsExample": true,
+      "followUp": "Now walk me through one specific case you handled yourself, from start to finish.",
+      "topic": "Your experience with clients or students, and one case you handled"
     },
     {
       "id": "format",
       "label": "Формат работы",
-      "ask": "What working setup are you looking for — full time or part time, and how do you feel about a fully remote team across time zones?"
+      "ask": "What working setup are you looking for — full time or part time, and how do you feel about a fully remote team across time zones?",
+      "topic": "The working setup you are looking for"
     },
     {
       "id": "start",
       "label": "Срок выхода",
-      "ask": "If we moved forward, when could you realistically start?"
+      "ask": "If we moved forward, when could you realistically start?",
+      "topic": "When you could start"
     }
   ],
   "faq": [
@@ -39,5 +44,6 @@
       "q": "hours",
       "a": "The team overlaps for a few hours a day; the rest of the schedule is flexible."
     }
-  ]
+  ],
+  "title": "Student Success Manager"
 }

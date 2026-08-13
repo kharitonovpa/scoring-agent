@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { listSessions } from '@/lib/db'
+import { roleTitle } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,7 +47,7 @@ export default async function DashboardPage() {
               return (
                 <tr key={s.id} className="border-t border-line transition-colors hover:bg-paper">
                   <td className="px-4 py-3 font-medium">{s.candidateName}</td>
-                  <td className="px-4 py-3 text-ink-soft">{s.roleId}</td>
+                  <td className="px-4 py-3 text-ink-soft">{roleTitle(s.roleId)}</td>
                   <td className="px-4 py-3 text-ink-soft">
                     {new Date(s.startedAt).toLocaleString('ru-RU')}
                   </td>

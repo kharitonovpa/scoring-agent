@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildInstructions, loadRole } from '@/lib/roles'
+import { buildInstructions, loadRole, roleTitle } from '@/lib/roles'
 
 describe('roles', () => {
   it('загружает конфиг роли', () => {
@@ -26,5 +26,32 @@ describe('roles', () => {
     for (const forbidden of ['cefr', 'score', 'rubric', 'assess', 'evaluate']) {
       expect(text).not.toContain(forbidden)
     }
+  })
+})
+
+describe('вопросы пригодны для голосового разговора', () => {
+  const role = loadRole('unimatch-default')
+
+  it('каждый ask — один вопрос, а не два в одном предложении', () => {
+    for (const q of role.questions) {
+      // Два вопросительных знака означают, что агенту придётся нарушить либо
+      // «спрашивай по одному», либо потерять половину вопроса.
+      expect(q.ask.split('?').length - 1, `вопрос ${q.id}`).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('у каждого вопроса есть тема для кандидата', () => {
+    for (const q of role.questions) expect(q.topic, `вопрос ${q.id}`).toBeTruthy()
+  })
+
+  it('второй шаг вопроса про опыт задаётся отдельно', () => {
+    const experience = role.questions.find((q) => q.id === 'experience')!
+    expect(experience.followUp).toBeTruthy()
+    expect(buildInstructions(role)).toMatch(/Once they have answered that, then ask/)
+  })
+
+  it('роль имеет человеческое название для интерфейса', () => {
+    expect(roleTitle('unimatch-default')).toBe('Student Success Manager')
+    expect(roleTitle('нет-такой')).toBe('нет-такой')
   })
 })

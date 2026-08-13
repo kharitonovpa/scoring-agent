@@ -1,9 +1,19 @@
 import unimatchDefault from '../../config/roles/unimatch-default.json'
 
-export type RoleQuestion = { id: string; label: string; ask: string; needsExample?: boolean }
+export type RoleQuestion = {
+  id: string
+  label: string
+  /** Короткая формулировка темы для кандидата — показывается до начала разговора. */
+  topic: string
+  ask: string
+  followUp?: string
+  needsExample?: boolean
+}
 
 export type RoleConfig = {
   id: string
+  /** Короткое человеческое название для интерфейса: в дашборде и карточке. */
+  title: string
   company: string
   role: string
   pitch: string
@@ -26,12 +36,24 @@ export function loadRole(id: string): RoleConfig {
   return role
 }
 
+/**
+ * Название роли для интерфейса. Неизвестный идентификатор возвращаем как есть: увидеть
+ * в дашборде сырую строку лучше, чем уронить страницу из-за удалённой роли.
+ */
+export function roleTitle(id: string): string {
+  return ROLES[id]?.title ?? id
+}
+
 export function buildInstructions(role: RoleConfig): string {
   const questions = role.questions
-    .map(
-      (q, i) =>
-        `${i + 1}. [${q.id}] ${q.ask}${q.needsExample ? ' Insist on one concrete case they handled personally.' : ''}`,
-    )
+    .map((q, i) => {
+      const lines = [`${i + 1}. [${q.id}] Ask: "${q.ask}"`]
+      // Второй шаг отдельной строкой: раньше два вопроса стояли в одном предложении, и
+      // агент был обязан либо нарушить «спрашивай по одному», либо потерять половину.
+      if (q.followUp) lines.push(`   Once they have answered that, then ask: "${q.followUp}"`)
+      if (q.needsExample) lines.push('   Insist on one concrete case they handled personally.')
+      return lines.join('\n')
+    })
     .join('\n')
 
   const faq = role.faq.map((f) => `- ${f.q}: ${f.a}`).join('\n')
