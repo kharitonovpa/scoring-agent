@@ -1,36 +1,38 @@
 {
   "id": "unimatch-default",
-  "title": "Student Success Manager",
-  "minutes": 12,
-  "company": "Unimatch helps students find and apply to universities abroad — choosing programmes, preparing documents, and staying on track through admission deadlines. The team is small, fully remote and spread across several time zones, so people own their work end to end rather than passing tickets around.",
-  "role": "Student Success Manager — guiding applicants through the whole admission process in English, by video call and in writing.",
-  "pitch": "You would own a portfolio of applicants end to end: understanding what they want, matching them with programmes, and keeping their application on track until they are admitted. A typical week is a mix of calls with students, written follow-ups, and coordination with universities. Success looks like students admitted to a programme that actually fits them, not just any offer.",
+  "title": "Founding Engineer (Fullstack JS)",
+  "minutes": 15,
+  "company": "Unimatch Lab is an AI-driven venture studio — not a single product and not a classical IT company with one linear trajectory. Several directions run in parallel, from consumer hardware to B2B platforms. The stated goal is to be among the top 50 AI companies worldwide, with $10B in combined asset value by 2032. The studio is OKR-driven and runs on measurable results, speed, transparency and ownership. There are two blocks. Government is the first revenue-generating direction: an AI-agentic ecosystem for the UAE public sector — process automation, document workflows, services for citizens and business. Venture is the classic studio model: fast MVPs and hypothesis testing. Products in flight include Neybo, an AI hardware toy for the US kids market; Cortex and Future Fork, a B2B module family covering HR, legal, finance and planning; a wellness product aggregating health data behind an AI agent, currently a proof of concept; and a gamified language-learning platform. The principle is the same everywhere: build it for ourselves first, then take it outside.",
+  "role": "Founding Engineer (Fullstack JS) — the owner of one AI-native application end to end, effectively its CTO from day one. Fully remote, full time, paid as an individual contractor.",
+  "pitch": "The CEO or CPO sets the goals, the KPIs and the product frame, and hands over a clickable proof of concept. Execution, timelines and the technical result are yours: you take that prototype to an MVP in production and keep going. Four areas run through every stage — architecture and technical decisions, where you are the final call within the product; code quality and engineering standards, including review process, testing strategy and CI/CD with safe rollback; engineering velocity through automation, where anything that can be delegated to an agent is; and the engineering knowledge system of ADRs, guidelines and onboarding material. Working with AI agents and vibe-coding — Cursor, agent pipelines — is part of the daily process rather than an experiment. There are boundaries: product decomposition and feature prioritisation sit with the PM, deep infrastructure and security with the Head of Infra, and marketing and sales join after the MVP. In the first weeks you build a 30-60-90 plan together and commit to delivery.",
   "questions": [
     {
-      "id": "location",
-      "label": "Локация и право на работу",
-      "ask": "Where are you based right now, and are you legally allowed to work from there as a contractor?",
-      "topic": "Where you are based and your right to work"
+      "id": "solo_delivery",
+      "label": "Solo-ведение фичи или MVP до прода",
+      "topic": "A feature or MVP you led solo all the way to production",
+      "ask": "Describe the most recent case where you led a major feature or an MVP to production on your own.",
+      "followUp": "Walk me through what exactly was on you, from the first decision to the release.",
+      "needsExample": true
     },
     {
-      "id": "experience",
-      "label": "Опыт в домене + пример",
-      "ask": "Tell me about your experience working directly with clients or students.",
-      "needsExample": true,
-      "followUp": "Now walk me through one specific case you handled yourself, from start to finish.",
-      "topic": "Your experience with clients or students, and one case you handled"
+      "id": "ai_tools",
+      "label": "AI-инструменты в ежедневной работе",
+      "topic": "How AI tools sit in your daily workflow",
+      "ask": "How are AI tools built into your everyday working process?"
     },
     {
-      "id": "format",
-      "label": "Формат работы",
-      "ask": "What working setup are you looking for — full time or part time, and how do you feel about a fully remote team across time zones?",
-      "topic": "The working setup you are looking for"
+      "id": "web_mobile",
+      "label": "Прод: только web или и mobile",
+      "topic": "Whether your production experience covers mobile as well as web",
+      "ask": "In production, have you worked only with web, or have you shipped mobile as well?"
     },
     {
-      "id": "start",
-      "label": "Срок выхода",
-      "ask": "If we moved forward, when could you realistically start?",
-      "topic": "When you could start"
+      "id": "scope_cut",
+      "label": "Урезание объёма до MVP",
+      "topic": "A time you cut scope down to a first version",
+      "ask": "Was there a case where a client or a product manager asked for more than the first version needed?",
+      "followUp": "What MVP did you propose, what did you cut out of it, and how did you argue for that?",
+      "needsExample": true
     }
   ],
   "facts": [
@@ -41,18 +43,28 @@
     },
     {
       "id": "workRight",
-      "label": "Право на работу",
-      "what": "whether they are legally allowed to work from there"
+      "label": "Право работать контрактором",
+      "what": "whether they can legally invoice as an individual contractor from where they live"
     },
     {
-      "id": "domainExperience",
-      "label": "Опыт в домене",
-      "what": "their relevant experience, in one short line"
+      "id": "experience",
+      "label": "Опыт fullstack JS",
+      "what": "how many years of fullstack JS with a backend focus, in one short line"
     },
     {
-      "id": "workFormat",
-      "label": "Формат работы",
-      "what": "what working setup they want"
+      "id": "aiTools",
+      "label": "AI-инструменты",
+      "what": "which AI coding tools they actually use day to day"
+    },
+    {
+      "id": "mobile",
+      "label": "Мобильный прод",
+      "what": "whether they have shipped mobile to production, and what exactly"
+    },
+    {
+      "id": "payments",
+      "label": "Отношение к выплатам криптой",
+      "what": "how they reacted to payments being made in crypto for the next few months — leave empty if it never came up"
     },
     {
       "id": "startDate",
@@ -62,44 +74,48 @@
   ],
   "faq": [
     {
-      "q": "compensation and review cycle",
-      "a": "The range depends on experience and is agreed with the recruiter on the next call. Compensation is reviewed once a year."
+      "q": "compensation and how it is structured",
+      "a": "The rate for this role is around $6,000 a month. The structure is base plus ship-bonuses, quarterly or monthly, with targets agreed in your first weeks. Equity and revenue share come in once the product generates revenue, with details in a term sheet after the first month."
     },
     {
-      "q": "hiring process and timing",
-      "a": "This screening, then a call with the hiring manager, then a short practical task, then a decision. Usually two to three weeks end to end."
+      "q": "how payments are actually made",
+      "a": "Payments currently go out in crypto, and it is done properly: company wallet, invoice, AML checks, wallet rotation, and custodial rather than exchange wallets. You work as an individual contractor, so taxes are on your side. By the end of 2026 the company moves to fiat B2B payments through a bank or a Deel-like platform; roughly the next three months are still crypto. If you need help legalising it in your jurisdiction, a lawyer is brought in."
     },
     {
-      "q": "working hours and time zones",
-      "a": "The team overlaps for a few hours a day; the rest of the schedule is yours. No night shifts, no fixed office hours."
+      "q": "what the company actually does",
+      "a": "An AI-driven venture studio running several directions in parallel: a government block building an AI-agentic ecosystem for the UAE public sector, and a venture block doing fast MVPs across consumer and B2B products."
     },
     {
-      "q": "remote work and equipment",
-      "a": "Fully remote, permanently — the company has no office anyone is expected to attend. You work on your own machine."
+      "q": "which product or stream this role belongs to",
+      "a": "The specific stream is discussed separately at a later stage. At this point what matters is the overall portfolio picture."
     },
     {
-      "q": "contract type and location",
-      "a": "People work as contractors and invoice monthly. We hire from many countries as long as you can invoice legally from where you live."
+      "q": "what the role owns and what it does not",
+      "a": "You own architecture and technical decisions, code quality and engineering standards, engineering velocity, and the engineering knowledge system. You do not own product decomposition and feature prioritisation — that is the PM — nor deep infrastructure and security, which sit with the Head of Infra."
     },
     {
-      "q": "team size and who you would work with",
-      "a": "A small team — you would work day to day with two other success managers and the head of admissions."
+      "q": "the tech stack",
+      "a": "Node.js and React, with Next.js, React Native, GraphQL, REST and WebSockets, OAuth2 and JWT. LangChain and LangGraph on the AI side, OpenTelemetry for observability."
     },
     {
-      "q": "what a typical day looks like",
-      "a": "Two to four calls with students, written follow-ups on their applications, and checking what is at risk of missing a deadline."
+      "q": "working hours, remote work and time zones",
+      "a": "Fully remote with a flexible schedule outside core time. Work runs in two-week sprints — planning, delivery, retro. Sync with the US matters for this role: both coasts, with core-time windows when everyone is reachable."
     },
     {
-      "q": "onboarding and support for a new joiner",
-      "a": "You shadow live student cases for the first two weeks and take your own portfolio after that, with a buddy from the team."
+      "q": "the team and who you would work with",
+      "a": "Directly with the CEO or CPO, the Head of Infra, and the Head of Ops on a dotted line for OKRs and process. After the MVP, marketing, growth partners and ops join. Across the studio there are other Founding Engineers for architecture review when your decisions touch shared infrastructure."
     },
     {
-      "q": "growth and what happens after a year",
-      "a": "People grow either into owning a region or into mentoring new success managers. Both paths are used."
+      "q": "English and language requirements",
+      "a": "The team is becoming international and the company is moving to international hiring, so English is critically important in daily work. The bar for this role is B2 or above."
     },
     {
-      "q": "language requirements",
-      "a": "Work with students happens in English, so English is used daily. Other languages are a plus, never a requirement."
+      "q": "the hiring process and what happens next",
+      "a": "This screening, then conversations with the team, and a portfolio with code samples is expected. Before the next stages it is worth reading the operating manual at working-with-nick.vercel.app — it exists so both sides can make a deliberate decision."
+    },
+    {
+      "q": "the experience level expected",
+      "a": "Five or more years as a full-stack JS engineer with a backend focus, regular use of AI coding tools such as Cursor, product thinking and scope management, and production experience with releases and incidents."
     }
   ]
 }

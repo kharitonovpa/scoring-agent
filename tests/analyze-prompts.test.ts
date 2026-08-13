@@ -38,8 +38,7 @@ describe('renderTranscript', () => {
 describe('промпты', () => {
   it('структурный промпт перечисляет вопросы роли по id', () => {
     const prompt = structurePrompt(loadRole('unimatch-default'), renderTranscript(turns))
-    expect(prompt).toContain('location')
-    expect(prompt).toContain('experience')
+    for (const q of loadRole('unimatch-default').questions) expect(prompt).toContain(q.id)
   })
 
   it('каждый промпт требует цитаты и запрещает дискриминационные признаки', () => {

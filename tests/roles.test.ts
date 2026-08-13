@@ -5,7 +5,7 @@ describe('roles', () => {
   it('загружает конфиг роли', () => {
     const role = loadRole('unimatch-default')
     expect(role.questions).toHaveLength(4)
-    expect(role.questions[0].id).toBe('location')
+    expect(role.questions[0].id).toBe('solo_delivery')
   })
 
   it('падает на неизвестной роли', () => {
@@ -45,13 +45,13 @@ describe('вопросы пригодны для голосового разго
   })
 
   it('второй шаг вопроса про опыт задаётся отдельно', () => {
-    const experience = role.questions.find((q) => q.id === 'experience')!
-    expect(experience.followUp).toBeTruthy()
+    const withFollowUp = role.questions.filter((q) => q.followUp)
+    expect(withFollowUp.length).toBeGreaterThan(0)
     expect(buildInstructions(role)).toMatch(/Once they have answered that, then ask/)
   })
 
   it('роль имеет человеческое название для интерфейса', () => {
-    expect(roleTitle('unimatch-default')).toBe('Student Success Manager')
+    expect(roleTitle('unimatch-default')).toBe('Founding Engineer (Fullstack JS)')
     expect(roleTitle('нет-такой')).toBe('нет-такой')
   })
 })

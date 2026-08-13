@@ -17,7 +17,7 @@ const structure = {
   summary: 'Answers what is asked.',
   coverage: [
     {
-      questionId: 'location',
+      questionId: 'solo_delivery',
       answered: 'yes',
       note: 'Named the city.',
       evidence: [{ turnId: 'c1', quote: 'I am based in Lisbon' }],
@@ -120,7 +120,7 @@ describe('buildCard', () => {
 
     expect(card.language).toMatchObject({ rangeLow: 'B2', rangeHigh: 'C1' })
     expect(card.structure.coverage).toHaveLength(1)
-    expect(card.structure.coverage[0].questionLabel).toBe('Локация и право на работу')
+    expect(card.structure.coverage[0].questionLabel).toBe('Solo-ведение фичи или MVP до прода')
     expect(card.facts.find((f) => f.id === 'location')!.value).toBe('Lisbon')
     expect(metrics.candidateTurnCount).toBe(4)
     expect(parse).toHaveBeenCalledTimes(5)
@@ -132,7 +132,7 @@ describe('buildCard', () => {
         ...structure,
         coverage: [
           {
-            questionId: 'location',
+            questionId: 'solo_delivery',
             answered: 'yes',
             note: 'x',
             evidence: [{ turnId: 'c1', quote: 'I have a PhD from Oxford' }],
