@@ -42,10 +42,14 @@ export function MicCheck({
         ),
       )
 
+    // Вызывается дважды: по кнопке и при размонтировании. Повторное закрытие
+    // AudioContext бросает InvalidStateError, поэтому уборка идемпотентна.
     cleanup.current = () => {
       cancelAnimationFrame(raf)
       stream?.getTracks().forEach((t) => t.stop())
-      void ctx?.close()
+      if (ctx && ctx.state !== 'closed') void ctx.close()
+      ctx = null
+      stream = null
     }
     return () => cleanup.current()
   }, [onError])

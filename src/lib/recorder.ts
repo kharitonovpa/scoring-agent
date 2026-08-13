@@ -92,7 +92,7 @@ export class InterviewRecorder {
       })
     }
     await Promise.allSettled(this.pending)
-    await this.ctx?.close()
+    if (this.ctx && this.ctx.state !== 'closed') await this.ctx.close()
     this.recorder = null
     this.ctx = null
   }

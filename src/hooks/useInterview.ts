@@ -9,7 +9,7 @@ import {
 import { connectRealtime } from '@/lib/realtime-client'
 import { loadRole } from '@/lib/roles'
 import { InterviewRecorder } from '@/lib/recorder'
-import { assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
+import { affectsTurns, assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
 import type { Turn } from '@/lib/types'
 
 export type Phase = 'idle' | 'connecting' | 'live' | 'ending' | 'done' | 'error'
@@ -195,7 +195,9 @@ export function useInterview() {
               clientTimeSec: (performance.now() - startedAt.current) / 1000,
               event,
             })
-            setTurns(assembleTurns(events.current))
+            // Только на событиях, которые действительно меняют реплики: на потоковых
+            // delta пересборка была бы 97% лишней работы и вешала бы страницу.
+            if (affectsTurns(event)) setTurns(assembleTurns(events.current))
 
             // Прогресс сообщает агент: он один знает, к какому вопросу перешёл.
             const started = readQuestionStarted(event)

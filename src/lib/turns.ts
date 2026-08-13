@@ -4,6 +4,23 @@ export type StampedEvent = { clientTimeSec: number; event: Record<string, unknow
 
 type Timing = { tStart?: number; tEnd?: number }
 
+/**
+ * Единственные события, которые могут изменить набор реплик. Остальное — потоковые
+ * `delta`, их за разговор прилетают тысячи, и пересобирать транскрипт на каждом значит
+ * получить квадратичный рост работы: к середине разговора страница встаёт.
+ */
+export const TURN_EVENT_TYPES = new Set([
+  'input_audio_buffer.speech_started',
+  'input_audio_buffer.speech_stopped',
+  'conversation.item.input_audio_transcription.completed',
+  'response.output_audio_transcript.done',
+])
+
+/** Меняет ли это событие транскрипт. */
+export function affectsTurns(event: Record<string, unknown>): boolean {
+  return typeof event.type === 'string' && TURN_EVENT_TYPES.has(event.type)
+}
+
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
 const num = (v: unknown) => (typeof v === 'number' ? v : undefined)
 

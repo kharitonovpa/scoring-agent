@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
+import { TURN_EVENT_TYPES, affectsTurns, assembleTurns, computeAudioOffset, type StampedEvent } from '@/lib/turns'
 
 const ev = (clientTimeSec: number, event: Record<string, unknown>): StampedEvent => ({
   clientTimeSec,
@@ -127,5 +127,37 @@ describe('computeAudioOffset', () => {
 
   it('возвращает null, когда серверных таймингов не было', () => {
     expect(computeAudioOffset([ev(1, { type: 'session.updated' })], 0.5)).toBeNull()
+  })
+})
+
+describe('какие события пересобирают транскрипт', () => {
+  it('значимые события распознаются', () => {
+    for (const type of [
+      'input_audio_buffer.speech_started',
+      'input_audio_buffer.speech_stopped',
+      'conversation.item.input_audio_transcription.completed',
+      'response.output_audio_transcript.done',
+    ]) {
+      expect(affectsTurns({ type }), type).toBe(true)
+    }
+  })
+
+  it('потоковые delta транскрипт не меняют — иначе работа растёт квадратично', () => {
+    for (const type of [
+      'response.output_text.delta',
+      'response.output_audio_transcript.delta',
+      'conversation.item.input_audio_transcription.delta',
+      'conversation.item.added',
+      'response.done',
+      'rate_limits.updated',
+    ]) {
+      expect(affectsTurns({ type }), type).toBe(false)
+    }
+  })
+
+  it('перечень покрывает ровно то, что читает assembleTurns', () => {
+    // Если assembleTurns начнёт читать новый тип, а перечень не обновят, реплики
+    // перестанут появляться на экране. Тест держит их в паре.
+    expect(TURN_EVENT_TYPES.size).toBe(4)
   })
 })
