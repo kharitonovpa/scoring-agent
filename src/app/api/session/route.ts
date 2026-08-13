@@ -1,3 +1,4 @@
+import { sanitizeCandidateName } from '@/lib/candidate-name'
 import { countSessionsSince, createSession } from '@/lib/db'
 import { loadRole } from '@/lib/roles'
 
@@ -12,7 +13,7 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Malformed request body' }, { status: 400 })
   }
 
-  const candidateName = (payload.candidateName ?? '').trim()
+  const candidateName = sanitizeCandidateName(payload.candidateName)
   if (!candidateName) {
     return Response.json({ error: 'Candidate name is required' }, { status: 400 })
   }

@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { MAX_CANDIDATE_NAME } from '@/lib/candidate-name'
 import { loadRole } from '@/lib/roles'
 
 const ROLE = loadRole('unimatch-default')
@@ -47,6 +48,8 @@ export function ConsentScreen({ onReady }: { onReady: (name: string) => void }) 
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="field mt-1.5"
+            maxLength={MAX_CANDIDATE_NAME}
+            autoComplete="name"
             placeholder="Alex Smith"
           />
         </label>
